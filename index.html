@@ -75,6 +75,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.26', d: '11-11-2026', items: ['Admin: uendelig rækkevidde – alle dine våben skyder uendeligt langt, og automatisk sigte når robotter i hele banen', 'Admin: wallhack – dine skud går igennem mure, og automatisk sigte kan sigte gennem mure'] },
   { v: '1.25', d: '11-11-2026', items: ['Normal-knap i admin-tilstand (i pause-menuen, admin-panelet og ved game over) – starter en ny almindelig runde, der kan komme på highscore-tavlen'] },
   { v: '1.24', d: '11-11-2026', items: ['Savrobotter skal hugge præcis 10 gange for at ødelægge en bygget væg – uanset bølge'] },
   { v: '1.23', d: '11-11-2026', items: ['Minibossen kan ikke længere lave spurt', 'Alle flammekastere gør 50 % mindre skade (flammerobot, miniboss og boss)'] },
@@ -437,7 +438,7 @@ function tryBuild(wx, wy, quiet) {
 }
 
 // ---------- Spiltilstand ----------
-const cheats = { god: false, ammo: false, aimbot: false };
+const cheats = { god: false, ammo: false, aimbot: false, range: false, wallhack: false };
 let adminUnlocked = false, adminFrom = 'play', adminCount = 1, usedAdmin = false, adminMode = false;
 let ammoTimer, maxHpTimer, permDmgTimer, permRateTimer, player, robots, bullets, particles, missiles, rings, powerups, popups, powerTimer, buffs, superCharge, wave, kills, time, waveTimer, shake = 0, state = 'menu';
 let bannerText = '', bannerT = 0;
@@ -578,8 +579,8 @@ function pauseBtn() { return VW >= 640 ? { x: VW / 2, y: 28 } : { x: VW - 34, y:
 function buildBtn() { const sb = superBtn(); return { x: sb.x - 92, y: sb.y + 10, r: 32 }; }
 function superBtn() { return { x: VW - 80, y: Math.max(VH - 210, VH * 0.45), r: 40 }; }
 function nearestVisibleRobot() {
-  let best = null, bd = CFG.bulletRange;
-  for (const r of robots) { if (r.type === 'ghost') continue; const d = dist(r, player); if (d < bd && lineOfSight(player, r)) { bd = d; best = r; } }
+  let best = null, bd = cheats.range ? Infinity : CFG.bulletRange;
+  for (const r of robots) { if (r.type === 'ghost') continue; const d = dist(r, player); if (d < bd && (cheats.wallhack || lineOfSight(player, r))) { bd = d; best = r; } }
   return best;
 }
 
@@ -593,8 +594,8 @@ function tryShoot(angle) {
   for (let k = 0; k < W.pellets; k++) {
     const a = angle + (W.pellets > 1 ? (k / (W.pellets - 1) - 0.5) * 2 * W.spread + rand(-0.03, 0.03) : rand(-W.spread, W.spread));
     const c = Math.cos(a), s = Math.sin(a);
-    bullets.push({ x: p.x + c * 28, y: p.y + s * 28, vx: c * W.speed, vy: s * W.speed, seek: cheats.aimbot,
-      life: cheats.aimbot ? 8 : CFG.bulletRange * W.range / W.speed, owner: 'p', dmg, strong: buffs.damage > 0, wtype: p.weapon, superGain: W.superGain });
+    bullets.push({ x: p.x + c * 28, y: p.y + s * 28, vx: c * W.speed, vy: s * W.speed, seek: cheats.aimbot, thru: cheats.wallhack,
+      life: (cheats.aimbot || cheats.range) ? 8 : CFG.bulletRange * W.range / W.speed, owner: 'p', dmg, strong: buffs.damage > 0, wtype: p.weapon, superGain: W.superGain });
   }
   const c = Math.cos(angle), s = Math.sin(angle);
   burst(p.x + c * 34, p.y + s * 34, p.weapon === 'sniper' ? '#bfefff' : '#ffd27a', p.weapon === 'shotgun' ? 12 : 6, 160, angle, 0.6);
@@ -1146,7 +1147,7 @@ function updateBullets(dt) {
     }
     b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
     let dead = b.life <= 0 || b.x < 0 || b.y < 0 || b.x > WORLD.w || b.y > WORLD.h;
-    if (!dead && !b.seek) for (const w of walls) if (segHitsRect(ox, oy, b.x, b.y, w)) { dead = true; burst(ox, oy, '#cfd6df', 5, 140); break; }
+    if (!dead && !b.seek && !b.thru) for (const w of walls) if (segHitsRect(ox, oy, b.x, b.y, w)) { dead = true; burst(ox, oy, '#cfd6df', 5, 140); break; }
     if (!dead && b.owner !== 'p') for (const w of builtWalls) if (segHitsRect(ox, oy, b.x, b.y, w)) { damageWall(w, b.dmg); dead = true; burst(ox, oy, '#c9a06a', 5, 140); break; }
     if (!dead) {
       if (b.owner === 'p') {
@@ -1827,6 +1828,8 @@ function adminControls() {
       <button data-a="god" class="${cheats.god ? 'on' : ''}">Udødelig: ${cheats.god ? 'TIL' : 'FRA'}</button>
       <button data-a="ammo" class="${cheats.ammo ? 'on' : ''}">Uendelige skud: ${cheats.ammo ? 'TIL' : 'FRA'}</button>
       <button data-a="aimbot" class="${cheats.aimbot ? 'on' : ''}">Aimbot: ${cheats.aimbot ? 'TIL' : 'FRA'}</button>
+      <button data-a="range" class="${cheats.range ? 'on' : ''}">Uendelig rækkevidde: ${cheats.range ? 'TIL' : 'FRA'}</button>
+      <button data-a="wallhack" class="${cheats.wallhack ? 'on' : ''}">Wallhack: ${cheats.wallhack ? 'TIL' : 'FRA'}</button>
       <button data-a="mats">+20 byggemateriale</button>
       <button data-a="heal">Fyld liv</button>
       <button data-a="super">Fyld super</button>
@@ -1877,6 +1880,8 @@ function adminAction(a) {
   if (a === 'god') { cheats.god = !cheats.god; return adminControls(); }
   if (a === 'ammo') { cheats.ammo = !cheats.ammo; return adminControls(); }
   if (a === 'aimbot') { cheats.aimbot = !cheats.aimbot; return adminControls(); }
+  if (a === 'range') { cheats.range = !cheats.range; return adminControls(); }
+  if (a === 'wallhack') { cheats.wallhack = !cheats.wallhack; return adminControls(); }
   if (a.startsWith('w-')) {
     const t = a.slice(2);
     if (t === 'drop') { spawnWeaponDrop(); adminToast('Et våben er lagt på banen'); }
