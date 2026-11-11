@@ -75,6 +75,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.30', d: '11-11-2026', items: ['Man kan nu skifte tilbage til admin-tilstand fra et normalt spil: knap i pause-menuen og ved game over', 'Menu-knap i pause-menuen'] },
   { v: '1.29', d: '11-11-2026', items: ['Når spillet ikke kører på keha.dk, står der nu tydeligt, at tavlen kun gælder denne enhed, med et link til den fælles tavle på keha.dk/robotspil'] },
   { v: '1.28', d: '11-11-2026', items: ['Rettet: admin-ting (udødelig, uendelige skud, aimbot, uendelig rækkevidde, wallhack) slås nu fra, når en ny runde starter', 'En runde, hvor der på noget tidspunkt er admin-ting slået til, kommer aldrig på highscore-tavlen'] },
   { v: '1.27', d: '11-11-2026', items: ['Rettet: man kunne skyde i det uendelige ved at holde skydeknappen nede (især shotgun og sniper). Nu lader våbnet først op, når man slipper knappen'] },
@@ -1674,7 +1675,12 @@ function pause() {
     const nb = document.createElement('button'); nb.textContent = '▶ Normal (ny runde)'; nb.style.marginLeft = '8px';
     nb.onclick = () => { if (TOUCH) goFullscreen(); start(false); }; panel.appendChild(nb);
     const tip = document.createElement('p'); tip.className = 'tip'; tip.textContent = 'Du spiller i admin-tilstand. "Normal" starter en ny runde, der kan komme på highscore-tavlen.'; panel.appendChild(tip);
+  } else {
+    const ab2 = document.createElement('button'); ab2.className = 'sec'; ab2.textContent = '⚙ Admin-tilstand (ny runde)'; ab2.style.marginLeft = '8px';
+    ab2.onclick = () => { if (TOUCH) goFullscreen(); start(true); }; panel.appendChild(ab2);
   }
+  const mb = document.createElement('button'); mb.className = 'sec'; mb.textContent = 'Menu'; mb.style.marginLeft = '8px';
+  mb.onclick = menu; panel.appendChild(mb);
 }
 function resume() { state = 'play'; overlay.classList.add('hidden'); last = performance.now(); }
 function gameOver() {
@@ -1747,9 +1753,10 @@ async function gameOverPanel() {
       </div>${rekord && k > 0 ? '<p><b>Ny rekord!</b></p>' : ''}`;
   const btns = adminMode
     ? `<div class="menu-btns"><button id="gonormal">▶ Spil normalt</button><button class="sec" id="go">Spil igen (admin)</button><button class="sec" id="hsmenu">Menu</button></div>`
-    : `<div class="menu-btns"><button id="go">Spil igen</button><button class="sec" id="hsmenu">Menu</button></div>`;
+    : `<div class="menu-btns"><button id="go">Spil igen</button><button class="sec" id="goadmin">⚙ Admin-tilstand</button><button class="sec" id="hsmenu">Menu</button></div>`;
   const wire = () => {
     document.getElementById('go').onclick = again; document.getElementById('hsmenu').onclick = menu;
+    const ga = document.getElementById('goadmin'); if (ga) ga.onclick = () => { if (TOUCH) goFullscreen(); start(true); };
     const gn = document.getElementById('gonormal'); if (gn) gn.onclick = () => { if (TOUCH) goFullscreen(); start(false); };
   };
   panel.innerHTML = head + '<p class="muted">Henter highscore…</p>'; overlay.classList.remove('hidden');
