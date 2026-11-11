@@ -61,6 +61,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.17', d: '11-11-2026', items: ['Du beholder alle våben, du samler op, og kan skifte mellem dem: 1 = pistol, 2, 3 … i den rækkefølge du samlede dem op', 'Skift med tasterne 1–5 eller ved at klikke/trykke på våbnene nederst på skærmen', 'Der dukker kun våben op, som du ikke har endnu'] },
   { v: '1.16', d: '11-11-2026', items: ['Sjældne våben at samle op: shotgun (10 hagl, langsom), minigun (mega hurtig), sniper (uendelig rækkevidde, 4× skade, langsom) og rifle (hurtigere og lidt mere skade)', 'Et våben dukker op cirka hvert 45. sekund, og bossen taber et, når den dør', 'Dit våben står i HUD\'en, og det ses i hånden på din figur', 'Admin: vælg våben eller læg et våben på banen'] },
   { v: '1.15', d: '11-11-2026', items: ['Aimbot: du sigter nu selv – skuddene søger bare mod robotterne og har uendelig rækkevidde'] },
   { v: '1.14', d: '11-11-2026', items: ['Byg vægge: 1 byggemateriale hvert 3. sekund, 1 materiale = 1 væg. Højreklik for at bygge (BYG-knap på telefon)', 'Du kan gå og skyde igennem dine egne vægge – robotterne kan ikke', 'Robotterne finder vej uden om mure og vægge, går gennem åbninger og skyder kun vægge i stykker, hvis der ikke er en anden vej', 'Robotterne hører dig og kommer efter dig – undtagen når du gemmer dig i en busk', 'Admin: aimbot (uendelig rækkevidde og målsøgende skud) og +20 byggemateriale', 'Genstart-knap i pause-menuen', 'Super-missilet er nu kun på Q (højreklik bruges til at bygge)'] },
@@ -421,7 +422,7 @@ const cam = { x: 0, y: 0 };
 let best = 0; try { best = +localStorage.getItem('robotjagt_best') || 0; } catch (e) {}
 
 function reset() {
-  player = { x: 1100, y: 950, r: 18, hp: CFG.playerMaxHp, maxHp: CFG.playerMaxHp, dmgMul: 1, rateMul: 1, ammo: CFG.maxAmmo, maxAmmo: CFG.maxAmmo, weapon: 'pistol', lastHit: -99, fireCd: 0, angle: -Math.PI / 2, flash: 0, hidden: null, reveal: 0 };
+  player = { x: 1100, y: 950, r: 18, hp: CFG.playerMaxHp, maxHp: CFG.playerMaxHp, dmgMul: 1, rateMul: 1, ammo: CFG.maxAmmo, maxAmmo: CFG.maxAmmo, weapon: 'pistol', inventory: ['pistol'], lastHit: -99, fireCd: 0, angle: -Math.PI / 2, flash: 0, hidden: null, reveal: 0 };
   robots = []; bullets = []; particles = []; missiles = []; rings = []; superCharge = 0;
   powerups = []; popups = []; powerTimer = 3; ammoTimer = 12; maxHpTimer = 20; permDmgTimer = 22; permRateTimer = 36; buffs = { damage: 0, reload: 0 };
   wave = 0; kills = 0; time = 0; waveTimer = 1.2; shake = 0;
@@ -493,6 +494,7 @@ addEventListener('keydown', e => {
   if ((e.code === 'KeyP' || e.code === 'Escape') && !e.repeat) { if (state === 'play') pause(); else if (state === 'pause') resume(); return; }
   if ((e.code === 'Enter') && state !== 'play') { if (state === 'pause') resume(); else start(); return; }
   if (e.code === 'KeyQ' && !e.repeat) { fireSuper(); return; }
+  const dn = /^(Digit|Numpad)([1-9])$/.exec(e.code); if (dn) { selectSlot(+dn[2] - 1); return; }
   if (e.code === 'KeyE' && !e.repeat && (state === 'play' || state === 'pause')) { openAdmin(); return; }
   keys.add(e.code);
 });
@@ -504,6 +506,7 @@ addEventListener('orientationchange', () => setTimeout(resize, 200));
 
 cv.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true; });
 cv.addEventListener('mousedown', e => {
+  if (e.button === 0 && state === 'play') { const si = slotAt(e.clientX, e.clientY); if (si >= 0) { selectSlot(si); return; } }
   if (e.button === 0) { mouse.down = true; mouse.active = true; mouse.x = e.clientX; mouse.y = e.clientY; }
   if (e.button === 2) { mouse.rdown = true; mouse.active = true; mouse.x = e.clientX; mouse.y = e.clientY; tryBuild(cam.x + mouse.x / zoom, cam.y + mouse.y / zoom, false); }
 });
@@ -515,6 +518,7 @@ cv.addEventListener('touchstart', e => {
   for (const t of e.changedTouches) {
     const o = { id: t.identifier, sx: t.clientX, sy: t.clientY, x: t.clientX, y: t.clientY };
     if (state === 'play' && Math.hypot(t.clientX - pauseBtn().x, t.clientY - pauseBtn().y) < 30) { pause(); continue; }
+    if (state === 'play') { const si = slotAt(t.clientX, t.clientY); if (si >= 0) { selectSlot(si); continue; } }
     const bb = buildBtn();
     if (state === 'play' && Math.hypot(t.clientX - bb.x, t.clientY - bb.y) < bb.r + 8) { buildMode = !buildMode; continue; }
     const sb = superBtn();
@@ -755,9 +759,43 @@ function updatePowerups(dt) {
 }
 
 // ---------- Våben man kan samle op (sjældne) ----------
+// Våbenrækken: 1 = pistol, derefter i den rækkefølge man samler våben op
+function giveWeapon(t) {
+  const p = player;
+  if (!p.inventory.includes(t)) p.inventory.push(t);
+  p.weapon = t; p.ammo = p.maxAmmo; p.fireCd = 0;
+}
+function selectSlot(n) {
+  const p = player, t = p.inventory[n];
+  if (!t || t === p.weapon || state !== 'play') return;
+  p.weapon = t; p.fireCd = 0.12;
+  popups.push({ x: p.x, y: p.y - 40, text: (n + 1) + ' · ' + WEAPONS[t].name, color: WEAPONS[t].color, t: 0.5 });
+}
+function slotRects() {
+  const inv = player.inventory, w = 84, h = 32, g = 6, total = inv.length * w + (inv.length - 1) * g;
+  const x0 = VW / 2 - total / 2, y = VH - h - 10;
+  return inv.map((t, i) => ({ t, i, x: x0 + i * (w + g), y, w, h }));
+}
+function slotAt(px, py) {
+  if (player.inventory.length < 2) return -1;
+  for (const r of slotRects()) if (px >= r.x && px <= r.x + r.w && py >= r.y - 6 && py <= r.y + r.h + 6) return r.i;
+  return -1;
+}
+function drawSlots() {
+  if (state !== 'play' || player.inventory.length < 2) return;
+  for (const r of slotRects()) {
+    const W = WEAPONS[r.t], on = r.t === player.weapon;
+    ctx.fillStyle = on ? 'rgba(40,48,60,.92)' : 'rgba(13,16,20,.7)'; rr(r.x, r.y, r.w, r.h, 8); ctx.fill();
+    ctx.lineWidth = on ? 3 : 1.5; ctx.strokeStyle = on ? W.color : 'rgba(150,165,185,.35)'; ctx.stroke();
+    ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+    ctx.font = '900 13px system-ui,sans-serif'; ctx.fillStyle = on ? '#fff' : '#93a0b0'; ctx.fillText(String(r.i + 1), r.x + 8, r.y + r.h / 2 + 1);
+    ctx.font = '800 11.5px system-ui,sans-serif'; ctx.fillStyle = W.color; ctx.fillText(W.name.toUpperCase(), r.x + 22, r.y + r.h / 2 + 1);
+  }
+}
 function spawnWeaponDrop(type, x, y) {
   if (!type) {
-    const opts = ['shotgun', 'minigun', 'sniper', 'rifle'].filter(t => t !== player.weapon);
+    const opts = ['shotgun', 'minigun', 'sniper', 'rifle'].filter(t => !player.inventory.includes(t));
+    if (!opts.length) return; // man har allerede alle våben
     type = opts[Math.floor(Math.random() * opts.length)];
   }
   if (x === undefined) {
@@ -777,7 +815,7 @@ function updateWeaponDrops(dt) {
   for (let i = weaponDrops.length - 1; i >= 0; i--) {
     const w = weaponDrops[i]; w.t += dt;
     if (Math.hypot(w.x - player.x, w.y - player.y) < player.r + 24) {
-      player.weapon = w.type; player.ammo = player.maxAmmo; player.fireCd = 0;
+      giveWeapon(w.type);
       burst(w.x, w.y, WEAPONS[w.type].color, 30, 300); banner(WEAPONS[w.type].name + '!');
       weaponDrops.splice(i, 1);
     }
@@ -1271,6 +1309,7 @@ function draw() {
   if (player.flash > 0) { ctx.fillStyle = `rgba(255,40,40,${player.flash * 1.1})`; ctx.fillRect(0, 0, VW, VH); }
 
   if (state !== 'menu') drawHUD();
+  drawSlots();
   drawJoysticks();
 }
 
@@ -1464,7 +1503,7 @@ function drawHUDInner() {
 
   const boss = robots.find(r => r.type === 'boss');
   if (boss) {
-    const bw = Math.min(460, VW - 360 > 220 ? VW - 360 : VW - 40), bx = VW / 2 - bw / 2, byy = isTouch || VW < 760 ? VH - 44 : 18;
+    const bw = Math.min(460, VW - 360 > 220 ? VW - 360 : VW - 40), bx = VW / 2 - bw / 2, byy = isTouch || VW < 760 ? VH - 100 : 18;
     ctx.fillStyle = 'rgba(13,16,20,.8)'; rr(bx - 8, byy - 8, bw + 16, 40, 10); ctx.fill();
     ctx.fillStyle = '#2a1b36'; rr(bx, byy, bw, 24, 6); ctx.fill();
     ctx.fillStyle = '#c44dff'; rr(bx, byy, Math.max(12, bw * boss.hp / boss.maxHp), 24, 6); ctx.fill();
@@ -1481,7 +1520,7 @@ function drawHUDInner() {
   }
   if (!isTouch && state === 'play' && time < 6) {
     ctx.textAlign = 'center'; ctx.font = '600 13px system-ui,sans-serif'; ctx.fillStyle = 'rgba(220,230,240,.7)';
-    ctx.fillText('P / Esc = pause', VW / 2, VH - 20);
+    ctx.fillText('P / Esc = pause', VW / 2, VH - 64);
   }
 }
 function drawJoysticks() {
@@ -1534,13 +1573,15 @@ function menu() {
       <li><b>Bevæg dig:</b> sæt venstre tommel på skærmen og træk</li>
       <li><b>Skyd:</b> tryk kort med højre tommel – sigter automatisk på den nærmeste robot</li>
       <li><b>Sigt selv:</b> træk med højre tommel og slip for at skyde</li>
+      <li><b>Skift våben:</b> tryk på våbnene nederst på skærmen</li>
       <li><b>Byg:</b> tryk på BYG-knappen og så på banen, hvor væggen skal stå (tryk BYG igen for at skyde)</li>
       <li><b>Super:</b> den gule SUPER-knap · <b>Pause og admin:</b> pauseknappen ⏸ øverst</li>` : `
       <li><b>Bevæg dig:</b> W = op, A = venstre, S = ned, D = højre (piletaster virker også)</li>
       <li><b>Skyd:</b> mellemrum – sigter automatisk på den nærmeste robot, du kan se</li>
       <li><b>Sigt selv:</b> brug musen og venstreklik, hvis du hellere vil det</li>
       <li><b>Byg en væg:</b> højreklik (hold og træk for at bygge flere)</li>
-      <li><b>Super:</b> Q · <b>Pause:</b> P eller Esc · <b>Admin:</b> E</li>`;
+      <li><b>Super:</b> Q · <b>Pause:</b> P eller Esc · <b>Admin:</b> E</li>
+      <li><b>Skift våben:</b> tast 1 = pistol, 2, 3 … = våbnene i den rækkefølge du samlede dem op (eller klik på dem nederst)</li>`;
   const portrait = TOUCH && VH > VW;
   panel.innerHTML = `<h1>Robotjagt</h1><p>Overlev så mange bølger af robotter som muligt. <span style="color:#93a0b0">· v${VERSION}</span></p>
     <div class="menu-btns"><button id="go">Start spil</button><button class="sec" id="lognow">Ændringslog</button></div>
@@ -1570,7 +1611,7 @@ ${controls}
         <br>• <b style="color:#b46bff">⚔ Lilla sværd</b> – <b>+25 % skade for altid</b> (kan samles flere gange)
         <br>• <b style="color:#2fe0d0">» Turkis lyn</b> – <b>+25 % skudhastighed for altid</b> (hurtigere genladning, kan samles flere gange)
         <br>• <b style="color:#3ee06a">▲ Grøn krystal</b> – giver dig <b>1 skud ekstra</b> for resten af spillet (op til 8)</li>
-      <li><b>Sjældne våben</b> dukker op på banen (cirka hvert 45. sekund, og bossen taber et). Gå hen over dem for at skifte:
+      <li><b>Sjældne våben</b> dukker op på banen (cirka hvert 45. sekund, og bossen taber et). Gå hen over dem for at samle dem op – du beholder dem alle og kan skifte mellem dem:
         <br>• <b style="color:#ff9a4a">Shotgun</b> – 10 hagl på én gang, men skyder og lader langsomt
         <br>• <b style="color:#ffd84a">Minigun</b> – skyder mega hurtigt${TOUCH ? ' (hold højre tommel trukket ud)' : ' (hold knappen nede)'}
         <br>• <b style="color:#6fd3ff">Sniper</b> – uendelig rækkevidde og 4× skade, men skyder langsomt
@@ -1716,7 +1757,7 @@ function adminAction(a) {
   if (a.startsWith('w-')) {
     const t = a.slice(2);
     if (t === 'drop') { spawnWeaponDrop(); adminToast('Et våben er lagt på banen'); }
-    else { p.weapon = t; p.ammo = p.maxAmmo; p.fireCd = 0; adminToast('Du har nu: ' + WEAPONS[t].name); }
+    else { giveWeapon(t); adminToast('Du har nu: ' + WEAPONS[t].name + ' (plads ' + (p.inventory.indexOf(t) + 1) + ')'); }
   }
   if (a === 'mats') { materials += 20; adminToast('Byggemateriale: ' + materials); }
   if (a === 'heal') { p.hp = p.maxHp; adminToast('Liv fyldt op'); }
