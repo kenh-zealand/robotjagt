@@ -75,6 +75,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.27', d: '11-11-2026', items: ['Rettet: man kunne skyde i det uendelige ved at holde skydeknappen nede (især shotgun og sniper). Nu lader våbnet først op, når man slipper knappen'] },
   { v: '1.26', d: '11-11-2026', items: ['Admin: uendelig rækkevidde – alle dine våben skyder uendeligt langt, og automatisk sigte når robotter i hele banen', 'Admin: wallhack – dine skud går igennem mure, og automatisk sigte kan sigte gennem mure'] },
   { v: '1.25', d: '11-11-2026', items: ['Normal-knap i admin-tilstand (i pause-menuen, admin-panelet og ved game over) – starter en ny almindelig runde, der kan komme på highscore-tavlen'] },
   { v: '1.24', d: '11-11-2026', items: ['Savrobotter skal hugge præcis 10 gange for at ødelægge en bygget væg – uanset bølge'] },
@@ -958,6 +959,9 @@ function updatePlayer(dt) {
   p.fireCd = Math.max(0, p.fireCd - dt);
   const rt = (buffs.reload > 0 ? CFG.fastReload : CFG.reloadTime) / p.rateMul * WEAPONS[p.weapon].reload;
   p.reloadPause = Math.max(0, (p.reloadPause || 0) - dt);
+  // Man lader kun op, når man ikke holder skydeknappen nede – ellers ville man have uendelige skud
+  const holdingFire = mouse.down || keys.has('Space') || (touch.aim && WEAPONS[p.weapon].auto && Math.hypot(touch.aim.x - touch.aim.sx, touch.aim.y - touch.aim.sy) > 18);
+  if (holdingFire) p.reloadPause = Math.max(p.reloadPause, CFG.reloadPause / p.rateMul);
   if (cheats.ammo) p.ammo = p.maxAmmo;
   if (p.ammo < p.maxAmmo && p.reloadPause <= 0) p.ammo = Math.min(p.maxAmmo, p.ammo + dt / rt);
   if (mouse.down || keys.has('Space')) tryShoot(p.angle);
