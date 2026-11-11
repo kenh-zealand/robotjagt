@@ -61,6 +61,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.14', d: '11-11-2026', items: ['Byg vægge: 1 byggemateriale hvert 3. sekund, 1 materiale = 1 væg. Højreklik for at bygge (BYG-knap på telefon)', 'Du kan gå og skyde igennem dine egne vægge – robotterne kan ikke', 'Robotterne finder vej uden om mure og vægge, går gennem åbninger og skyder kun vægge i stykker, hvis der ikke er en anden vej', 'Robotterne hører dig og kommer efter dig – undtagen når du gemmer dig i en busk', 'Admin: aimbot (uendelig rækkevidde og målsøgende skud) og +20 byggemateriale', 'Genstart-knap i pause-menuen', 'Super-missilet er nu kun på Q (højreklik bruges til at bygge)'] },
   { v: '1.13', d: '11-11-2026', items: ['Bedre på telefon: fuld skærm når du starter, og HUD\'en skaleres ned på små skærme', 'Startskærmen viser telefon-styring på telefoner og tastatur-styring på computer', 'Spillet holder pause, hvis du skifter app', 'Spillet kan spilles på keha.dk/robotspil'] },
   { v: '1.12', d: '11-11-2026', items: ['Admin: powerups gives direkte til dig og lægges oveni det, du har – du skal ikke samle dem op (ingen lofter, og 2× og genladning forlænges)', 'Ny robot: teleport-robot (fra bølge 3) – blinker, forsvinder og dukker op et nyt sted', 'Ny robot: usynlig robot (fra bølge 4) – kun dens lyseblå skud kan ses, og den automatiske sigte rammer den ikke'] },
   { v: '1.11', d: '11-11-2026', items: ['Admin: vælg hvor mange powerups der skal lægges ved dig (1–50 ad gangen)'] },
@@ -128,6 +129,13 @@ const CFG = {
   permDmgEvery: 30,     // sekunder mellem lilla sværd
   permRateBonus: 0.25,  // turkis lyn: +25 % skudhastighed for altid
   permRateEvery: 30,    // sekunder mellem turkise lyn
+  materialEvery: 3,     // et byggemateriale hvert 3. sekund
+  maxMaterials: 30,
+  startMaterials: 3,
+  wallHp: 1500,         // liv pr. bygget væg
+  buildRange: 340,      // hvor langt væk man kan bygge
+  wallPathCost: 30,     // hvor meget robotter hellere vil gå udenom end skyde sig igennem
+  hearRange: 650,       // robotter hører dig inden for denne afstand (ikke når du er i en busk)
   maxPowerups: 4,       // højst så mange powerups på banen ad gangen
   healAmount: 1200,     // helbredelse: +1200 liv
   buffTime: 10,         // skade- og genladnings-powerup varer 10 sek.
@@ -200,15 +208,17 @@ for (const b of bushes) {
   }
 }
 
+let builtWalls = []; // vægge spilleren har bygget
 function hitsWall(x, y, r) {
-  for (const w of walls) {
+  for (const w of walls.concat(builtWalls)) {
     const cx = clamp(x, w.x, w.x + w.w), cy = clamp(y, w.y, w.y + w.h);
     if ((x - cx) ** 2 + (y - cy) ** 2 < r * r) return true;
   }
   return false;
 }
-function pushOut(o) {
-  for (const w of walls) {
+// skipBuilt = true for spilleren: man kan selv gå igennem sine egne vægge
+function pushOut(o, skipBuilt) {
+  for (const w of (skipBuilt ? walls : walls.concat(builtWalls))) {
     const cx = clamp(o.x, w.x, w.x + w.w), cy = clamp(o.y, w.y, w.y + w.h);
     const dx = o.x - cx, dy = o.y - cy, d2 = dx * dx + dy * dy;
     if (d2 < o.r * o.r) {
@@ -246,8 +256,149 @@ function moveDir(o, dx, dy, step) {
   o.x += dx / l * step; o.y += dy / l * step; pushOut(o);
 }
 
+// ---------- Byggede vægge og vejfinding ----------
+// Banen deles i felter på 50×50. Robotter finder den korteste vej til spilleren rundt om murene.
+// En bygget væg koster ekstra at gå "igennem" – så går de hellere udenom, hvis der er en åbning,
+// og skyder kun væggen i stykker, hvis der ikke er en anden vej.
+const GS = 50, GW = Math.ceil(WORLD.w / GS), GH = Math.ceil(WORLD.h / GS);
+const staticBlocked = new Uint8Array(GW * GH), staticSolid = new Uint8Array(GW * GH);
+for (let cy = 0; cy < GH; cy++) for (let cx = 0; cx < GW; cx++) {
+  const i = cy * GW + cx, x0 = cx * GS, y0 = cy * GS, ccx = x0 + GS / 2, ccy = y0 + GS / 2;
+  for (const w of walls) {
+    if (x0 < w.x + w.w && x0 + GS > w.x && y0 < w.y + w.h && y0 + GS > w.y) staticSolid[i] = 1;
+    if (Math.hypot(ccx - clamp(ccx, w.x, w.x + w.w), ccy - clamp(ccy, w.y, w.y + w.h)) < 24) staticBlocked[i] = 1;
+  }
+}
+const builtAt = new Array(GW * GH).fill(null);
+const flow = new Float32Array(GW * GH);
+let flowDirty = true, flowTimer = 0, materials = 0, matTimer = 0, buildMode = false;
+const cellOf = (x, y) => clamp(Math.floor(y / GS), 0, GH - 1) * GW + clamp(Math.floor(x / GS), 0, GW - 1);
+
+function computeFlow() {
+  flow.fill(Infinity);
+  const start = cellOf(player.x, player.y), heap = [];
+  const push = (c, i) => { heap.push([c, i]); let k = heap.length - 1; while (k > 0) { const q = (k - 1) >> 1; if (heap[q][0] <= heap[k][0]) break; [heap[q], heap[k]] = [heap[k], heap[q]]; k = q; } };
+  const pop = () => {
+    const top = heap[0], last = heap.pop();
+    if (heap.length) { heap[0] = last; let k = 0; for (;;) { const l = 2 * k + 1, rr2 = l + 1; let m = k;
+      if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (rr2 < heap.length && heap[rr2][0] < heap[m][0]) m = rr2;
+      if (m === k) break; [heap[m], heap[k]] = [heap[k], heap[m]]; k = m; } }
+    return top;
+  };
+  flow[start] = 0; push(0, start);
+  while (heap.length) {
+    const [c, i] = pop(); if (c > flow[i]) continue;
+    const cx = i % GW, cy = (i / GW) | 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (!dx && !dy) continue;
+      const nx = cx + dx, ny = cy + dy; if (nx < 0 || ny < 0 || nx >= GW || ny >= GH) continue;
+      const j = ny * GW + nx; if (staticBlocked[j]) continue;
+      if (dx && dy) { const a = cy * GW + nx, b = ny * GW + cx; if (staticBlocked[a] || staticBlocked[b] || builtAt[a] || builtAt[b]) continue; }
+      const nc = c + (dx && dy ? 1.414 : 1) + (builtAt[j] ? CFG.wallPathCost : 0);
+      if (nc < flow[j]) { flow[j] = nc; push(nc, j); }
+    }
+  }
+}
+function flowNext(r) {
+  const i = cellOf(r.x, r.y), cx = i % GW, cy = (i / GW) | 0;
+  let best = -1, bd = flow[i];
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    if (!dx && !dy) continue;
+    const nx = cx + dx, ny = cy + dy; if (nx < 0 || ny < 0 || nx >= GW || ny >= GH) continue;
+    const j = ny * GW + nx; if (staticBlocked[j]) continue;
+    if (dx && dy) { const a = cy * GW + nx, b = ny * GW + cx; if (staticBlocked[a] || staticBlocked[b] || builtAt[a] || builtAt[b]) continue; }
+    if (flow[j] < bd) { bd = flow[j]; best = j; }
+  }
+  if (best < 0) return null;
+  return { x: (best % GW) * GS + GS / 2, y: ((best / GW) | 0) * GS + GS / 2, wall: builtAt[best] };
+}
+function clearPath(a, b, rad) {
+  for (const w of walls.concat(builtWalls))
+    if (segHitsRect(a.x, a.y, b.x, b.y, { x: w.x - rad, y: w.y - rad, w: w.w + 2 * rad, h: w.h + 2 * rad })) return false;
+  return true;
+}
+// Robotternes syn: både mure og byggede vægge skjuler dig
+function losRobot(a, b) {
+  if (!lineOfSight(a, b)) return false;
+  for (const w of builtWalls) if (segHitsRect(a.x, a.y, b.x, b.y, w)) return false;
+  return true;
+}
+function navigate(r, tx, ty, step) {
+  r.wallTarget = null;
+  if (clearPath(r, { x: tx, y: ty }, r.r * 0.7)) { r.angle = Math.atan2(ty - r.y, tx - r.x); moveDir(r, tx - r.x, ty - r.y, step); return; }
+  const n = flowNext(r);
+  if (!n) { moveDir(r, tx - r.x, ty - r.y, step); return; }
+  if (n.wall) {
+    r.wallTarget = n.wall;
+    const wx = n.wall.x + GS / 2, wy = n.wall.y + GS / 2;
+    r.angle = Math.atan2(wy - r.y, wx - r.x);
+    if (Math.hypot(wx - r.x, wy - r.y) > r.r + GS * 0.5 + 8) moveDir(r, wx - r.x, wy - r.y, step);
+    return;
+  }
+  r.angle = Math.atan2(n.y - r.y, n.x - r.x); moveDir(r, n.x - r.x, n.y - r.y, step);
+}
+function waveDmgMul() { return 1 + CFG.dmgPerWave * (Math.max(1, wave) - 1); }
+function damageWall(w, dmg) {
+  if (!builtAt[w.i]) return;
+  w.hp -= dmg * waveDmgMul(); w.flash = 0.1;
+  if (w.hp <= 0) {
+    builtWalls.splice(builtWalls.indexOf(w), 1); builtAt[w.i] = null; flowDirty = true;
+    burst(w.x + GS / 2, w.y + GS / 2, '#b07a40', 22, 260); burst(w.x + GS / 2, w.y + GS / 2, '#6e4a24', 12, 180);
+  }
+}
+function attackWall(r, dt) {
+  const w = r.wallTarget; if (!w || !builtAt[w.i]) { r.wallTarget = null; return; }
+  const wx = w.x + GS / 2, wy = w.y + GS / 2, d = Math.hypot(wx - r.x, wy - r.y);
+  r.angle = Math.atan2(wy - r.y, wx - r.x);
+  if (r.type === 'saw') {
+    if (d < r.r + GS * 0.5 + 14) { r.sawCd -= dt; if (r.sawCd <= 0) { damageWall(w, CFG.sawDamage); r.sawCd = CFG.sawTick; burst(wx, wy, '#ffe9a8', 5, 200); } }
+    return;
+  }
+  if (r.type === 'flame') {
+    if (d < CFG.flameRange) {
+      r.flaming = true; damageWall(w, CFG.flameDps * dt);
+      for (let k = 0; k < 2; k++) {
+        const a = r.angle + rand(-0.25, 0.25), v = rand(380, 470), life = rand(0.4, 0.55);
+        particles.push({ x: r.x + Math.cos(r.angle) * 32, y: r.y + Math.sin(r.angle) * 32, vx: Math.cos(a) * v, vy: Math.sin(a) * v,
+          life, max: life, color: ['#ffdf6b', '#ff7a2a'][k], size: rand(4, 8), drag: 0.965, grow: true });
+      }
+    }
+    return;
+  }
+  r.wallFireCd = (r.wallFireCd || 0) - dt;
+  if (d < 420 && r.wallFireCd <= 0) {
+    if (r.type === 'boss') shootSpread(r, r.kit.guns, Math.min(0.28, 0.9 / r.kit.guns), CFG.bossBulletSpeed, CFG.bossDamage, true, 52);
+    else if (r.type === 'mini') shootSpread(r, r.kit.guns, 0.12, CFG.robotBulletSpeed, CFG.robotDamage, false, 40);
+    else robotShoot(r);
+    r.wallFireCd = r.type === 'boss' ? 1.4 : 0.9;
+  }
+}
+function buildCheck(wx, wy) {
+  if (wx < 0 || wy < 0 || wx >= WORLD.w || wy >= WORLD.h) return { ok: false };
+  const i = cellOf(wx, wy), x0 = (i % GW) * GS, y0 = ((i / GW) | 0) * GS;
+  const res = { i, x: x0, y: y0, ok: false, why: '' };
+  if (staticSolid[i] || builtAt[i]) return res;
+  if (Math.hypot(x0 + GS / 2 - player.x, y0 + GS / 2 - player.y) > CFG.buildRange) { res.why = 'For langt væk'; return res; }
+  for (const r of robots) if (Math.hypot(r.x - clamp(r.x, x0, x0 + GS), r.y - clamp(r.y, y0, y0 + GS)) < r.r) { res.why = 'Der står en robot'; return res; }
+  if (materials < 1) { res.why = 'Ikke nok byggemateriale'; return res; }
+  res.ok = true; return res;
+}
+let buildMsgT = 0;
+function tryBuild(wx, wy, quiet) {
+  if (state !== 'play') return false;
+  const c = buildCheck(wx, wy);
+  if (!c.ok) {
+    if (!quiet && c.why && time > buildMsgT) { popups.push({ x: player.x, y: player.y - 40, text: c.why, color: '#ffb0a0', t: 0.4 }); buildMsgT = time + 0.8; }
+    return false;
+  }
+  const w = { x: c.x, y: c.y, w: GS, h: GS, hp: CFG.wallHp, maxHp: CFG.wallHp, i: c.i, flash: 0 };
+  builtWalls.push(w); builtAt[c.i] = w; materials--; flowDirty = true;
+  burst(c.x + GS / 2, c.y + GS / 2, '#c9a06a', 10, 160);
+  return true;
+}
+
 // ---------- Spiltilstand ----------
-const cheats = { god: false, ammo: false };
+const cheats = { god: false, ammo: false, aimbot: false };
 let adminUnlocked = false, adminFrom = 'play', adminCount = 1;
 let ammoTimer, maxHpTimer, permDmgTimer, permRateTimer, player, robots, bullets, particles, missiles, rings, powerups, popups, powerTimer, buffs, superCharge, wave, kills, time, waveTimer, shake = 0, state = 'menu';
 let bannerText = '', bannerT = 0;
@@ -259,6 +410,7 @@ function reset() {
   robots = []; bullets = []; particles = []; missiles = []; rings = []; superCharge = 0;
   powerups = []; popups = []; powerTimer = 3; ammoTimer = 12; maxHpTimer = 20; permDmgTimer = 22; permRateTimer = 36; buffs = { damage: 0, reload: 0 };
   wave = 0; kills = 0; time = 0; waveTimer = 1.2; shake = 0;
+  builtWalls = []; builtAt.fill(null); materials = CFG.startMaterials; matTimer = 0; buildMode = false; flowDirty = true; flowTimer = 0;
 }
 function banner(t) { bannerText = t; bannerT = 2.2; }
 
@@ -337,9 +489,9 @@ addEventListener('orientationchange', () => setTimeout(resize, 200));
 cv.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true; });
 cv.addEventListener('mousedown', e => {
   if (e.button === 0) { mouse.down = true; mouse.active = true; mouse.x = e.clientX; mouse.y = e.clientY; }
-  if (e.button === 2) fireSuper();
+  if (e.button === 2) { mouse.rdown = true; mouse.active = true; mouse.x = e.clientX; mouse.y = e.clientY; tryBuild(cam.x + mouse.x / zoom, cam.y + mouse.y / zoom, false); }
 });
-addEventListener('mouseup', e => { if (e.button === 0) mouse.down = false; });
+addEventListener('mouseup', e => { if (e.button === 0) mouse.down = false; if (e.button === 2) mouse.rdown = false; });
 cv.addEventListener('contextmenu', e => e.preventDefault());
 
 cv.addEventListener('touchstart', e => {
@@ -347,6 +499,8 @@ cv.addEventListener('touchstart', e => {
   for (const t of e.changedTouches) {
     const o = { id: t.identifier, sx: t.clientX, sy: t.clientY, x: t.clientX, y: t.clientY };
     if (state === 'play' && Math.hypot(t.clientX - pauseBtn().x, t.clientY - pauseBtn().y) < 30) { pause(); continue; }
+    const bb = buildBtn();
+    if (state === 'play' && Math.hypot(t.clientX - bb.x, t.clientY - bb.y) < bb.r + 8) { buildMode = !buildMode; continue; }
     const sb = superBtn();
     if (Math.hypot(t.clientX - sb.x, t.clientY - sb.y) < sb.r + 10) { fireSuper(); continue; }
     if (t.clientX < VW / 2 && !touch.move) touch.move = o;
@@ -367,6 +521,7 @@ function touchEnd(e) {
       const dx = touch.aim.x - touch.aim.sx, dy = touch.aim.y - touch.aim.sy;
       if (state === 'play') {
         if (Math.hypot(dx, dy) > 18) { player.angle = Math.atan2(dy, dx); tryShoot(player.angle); }
+        else if (buildMode) tryBuild(cam.x + touch.aim.x / zoom, cam.y + touch.aim.y / zoom, false); // byggetilstand: tryk = byg
         else { const tgt = nearestVisibleRobot(); if (tgt) player.angle = Math.atan2(tgt.y - player.y, tgt.x - player.x); tryShoot(player.angle); }
       }
       touch.aim = null;
@@ -377,6 +532,7 @@ cv.addEventListener('touchend', touchEnd, { passive: false });
 cv.addEventListener('touchcancel', touchEnd, { passive: false });
 
 function pauseBtn() { return VW >= 640 ? { x: VW / 2, y: 28 } : { x: VW - 34, y: 112 }; }
+function buildBtn() { const sb = superBtn(); return { x: sb.x - 92, y: sb.y + 10, r: 32 }; }
 function superBtn() { return { x: VW - 80, y: Math.max(VH - 210, VH * 0.45), r: 40 }; }
 function nearestVisibleRobot() {
   let best = null, bd = CFG.bulletRange;
@@ -389,9 +545,10 @@ function tryShoot(angle) {
   const p = player;
   if (p.ammo < 1 || p.fireCd > 0) return;
   p.ammo -= 1; p.fireCd = CFG.fireGap / p.rateMul; p.reveal = 0.9; p.reloadPause = CFG.reloadPause / p.rateMul;
+  if (cheats.aimbot) { const t = nearestRobot(p.x, p.y); if (t) angle = p.angle = Math.atan2(t.y - p.y, t.x - p.x); }
   const c = Math.cos(angle), s = Math.sin(angle);
-  bullets.push({ x: p.x + c * 28, y: p.y + s * 28, vx: c * CFG.bulletSpeed, vy: s * CFG.bulletSpeed,
-    life: CFG.bulletRange / CFG.bulletSpeed, owner: 'p', dmg: CFG.shotDamage * player.dmgMul * (buffs.damage > 0 ? 2 : 1), strong: buffs.damage > 0 });
+  bullets.push({ x: p.x + c * 28, y: p.y + s * 28, vx: c * CFG.bulletSpeed, vy: s * CFG.bulletSpeed, seek: cheats.aimbot,
+    life: cheats.aimbot ? 8 : CFG.bulletRange / CFG.bulletSpeed, owner: 'p', dmg: CFG.shotDamage * player.dmgMul * (buffs.damage > 0 ? 2 : 1), strong: buffs.damage > 0 });
   burst(p.x + c * 30, p.y + s * 30, '#ffd27a', 6, 160, angle, 0.6);
 }
 function robotShoot(r) {
@@ -407,7 +564,7 @@ function teleport(r) {
     const a = rand(0, Math.PI * 2), dd = rand(220, 420);
     const c = { x: ref.x + Math.cos(a) * dd, y: ref.y + Math.sin(a) * dd };
     if (c.x < 40 || c.y < 40 || c.x > WORLD.w - 40 || c.y > WORLD.h - 40 || hitsWall(c.x, c.y, r.r + 6)) continue;
-    if (i < 60 && !lineOfSight(c, ref)) continue;
+    if (i < 60 && !losRobot(c, ref)) continue;
     spot = c;
   }
   if (!spot) return;
@@ -638,6 +795,11 @@ function burst(x, y, color, n, speed, dir, spread) {
 function update(dt) {
   time += dt;
   if (robots.length === 0) { waveTimer -= dt; if (waveTimer <= 0) { spawnWave(); waveTimer = 2.5; } }
+  matTimer += dt;
+  while (matTimer >= CFG.materialEvery) { matTimer -= CFG.materialEvery; if (materials < CFG.maxMaterials) materials++; }
+  for (const w of builtWalls) w.flash = Math.max(0, w.flash - dt);
+  flowTimer -= dt;
+  if (robots.length && (flowDirty || flowTimer <= 0)) { computeFlow(); flowDirty = false; flowTimer = 0.25; }
   updatePlayer(dt); updatePowerups(dt); updateRobots(dt); updateBullets(dt); updateMissiles(dt);
   if (bannerT > 0) bannerT -= dt;
 }
@@ -654,10 +816,10 @@ function updatePlayer(dt) {
     if (l > 8) { const k = Math.min(1, l / 60); mx = dx / l * k; my = dy / l * k; }
   }
   const ml = Math.hypot(mx, my); if (ml > 1) { mx /= ml; my /= ml; }
-  p.x += mx * CFG.playerSpeed * dt; p.y += my * CFG.playerSpeed * dt; pushOut(p);
+  p.x += mx * CFG.playerSpeed * dt; p.y += my * CFG.playerSpeed * dt; pushOut(p, true);
 
   // Automatisk sigte: mellemrum (eller når musen ikke bruges) sigter mod nærmeste robot man kan se
-  const autoTarget = (keys.has('Space') || (!mouse.active && !touch.aim)) ? nearestVisibleRobot() : null;
+  const autoTarget = cheats.aimbot ? nearestRobot(p.x, p.y) : (keys.has('Space') || (!mouse.active && !touch.aim)) ? nearestVisibleRobot() : null;
   if (autoTarget) {
     p.angle = Math.atan2(autoTarget.y - p.y, autoTarget.x - p.x);
   } else if (touch.aim) {
@@ -674,6 +836,7 @@ function updatePlayer(dt) {
   if (cheats.ammo) p.ammo = p.maxAmmo;
   if (p.ammo < p.maxAmmo && p.reloadPause <= 0) p.ammo = Math.min(p.maxAmmo, p.ammo + dt / rt);
   if (mouse.down || keys.has('Space')) tryShoot(p.angle);
+  if (mouse.rdown) tryBuild(cam.x + mouse.x / zoom, cam.y + mouse.y / zoom, true); // hold højreklik og træk for at bygge flere
 
   if (time - p.lastHit >= CFG.regenDelay && p.hp < player.maxHp)
     p.hp = Math.min(player.maxHp, p.hp + player.maxHp * CFG.regenRate * dt);
@@ -693,7 +856,7 @@ function updateRobots(dt) {
     }
     const d = dist(r, player);
     const visible = !player.hidden || player.reveal > 0 || d < CFG.closeSight;
-    const sees = d < CFG.robotView && visible && lineOfSight(r, player);
+    const sees = d < CFG.robotView && visible && losRobot(r, player);
 
     r.flaming = false;
     // Savrobot: hugger når den rører dig
@@ -787,7 +950,7 @@ function updateRobots(dt) {
           r.stompCd = 5; shake = Math.max(shake, 12); rings.push({ x: r.x, y: r.y, t: 0, small: true });
           burst(r.x, r.y, '#c9b8e6', 30, 380);
           hitPlayer(450);
-          const ux = (player.x - r.x) / d, uy = (player.y - r.y) / d; player.x += ux * 90; player.y += uy * 90; pushOut(player);
+          const ux = (player.x - r.x) / d, uy = (player.y - r.y) / d; player.x += ux * 90; player.y += uy * 90; pushOut(player, true);
         }
       }
     } else if (sees) {
@@ -804,17 +967,27 @@ function updateRobots(dt) {
       if (r.fireCd <= 0 && d < CFG.robotRange) { robotShoot(r); r.fireCd = CFG.robotFire + rand(-0.15, 0.5); }
     } else {
       r.fireCd = Math.max(0.3, r.fireCd - dt);
+      // robotterne hører dig, hvis du ikke gemmer dig i en busk
+      if (!player.hidden && d < CFG.hearRange) { r.lastSeen = { x: player.x, y: player.y }; r.searchT = Math.max(r.searchT, 4); }
       if (r.lastSeen) {
         r.state = 'search'; r.searchT -= dt;
+        if (r.wallTarget) r.searchT = Math.max(r.searchT, 2);
         const dx = r.lastSeen.x - r.x, dy = r.lastSeen.y - r.y;
         if (Math.hypot(dx, dy) < 25 || r.searchT <= 0) { if (r.type === 'boss') { r.lastSeen = { x: player.x, y: player.y }; r.searchT = 30; continue; } r.lastSeen = null; r.state = 'wander'; r.target = null; r.lookT = 1.6; }
-        else { r.angle = Math.atan2(dy, dx); moveDir(r, dx, dy, CFG.robotSpeed * 1.05 * r.speedMul * dt); }
+        else {
+          navigate(r, r.lastSeen.x, r.lastSeen.y, (r.type === 'saw' ? CFG.sawSpeed * 0.8 : CFG.robotSpeed * 1.05) * r.speedMul * dt);
+          if (r.wallTarget) attackWall(r, dt);
+        }
       } else {
         r.state = 'wander';
         if (r.lookT > 0) { r.lookT -= dt; r.angle += dt * 2.4; }
         else {
           r.wanderT -= dt;
-          if (!r.target || r.wanderT <= 0 || Math.hypot(r.target.x - r.x, r.target.y - r.y) < 20) { r.target = randomFreePoint(); r.wanderT = rand(3, 6); }
+          if (!r.target || r.wanderT <= 0 || Math.hypot(r.target.x - r.x, r.target.y - r.y) < 20) {
+            r.target = randomFreePoint();
+            for (let k = 0; k < 15 && !clearPath(r, r.target, r.r); k++) r.target = randomFreePoint(); // vælg et sted den kan gå direkte hen til
+            r.wanderT = rand(3, 6);
+          }
           const dx = r.target.x - r.x, dy = r.target.y - r.y;
           r.angle = Math.atan2(dy, dx); moveDir(r, dx, dy, CFG.robotSpeed * 0.6 * r.speedMul * dt);
         }
@@ -838,9 +1011,18 @@ function updateBullets(dt) {
       b.vx = Math.cos(b.angle) * sp; b.vy = Math.sin(b.angle) * sp;
       if (Math.random() < 0.6) particles.push({ x: b.x, y: b.y, vx: 0, vy: 0, life: 0.35, max: 0.35, color: '#8a8f96', size: 3, grow: true });
     }
+    if (b.seek) { // aimbot: skuddet søger selv mod nærmeste robot
+      const t = nearestRobot(b.x, b.y);
+      if (t) {
+        const ang = Math.atan2(b.vy, b.vx); let diff = Math.atan2(t.y - b.y, t.x - b.x) - ang; diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+        const na = ang + clamp(diff, -14 * dt, 14 * dt), sp = Math.hypot(b.vx, b.vy);
+        b.vx = Math.cos(na) * sp; b.vy = Math.sin(na) * sp;
+      }
+    }
     b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
     let dead = b.life <= 0 || b.x < 0 || b.y < 0 || b.x > WORLD.w || b.y > WORLD.h;
-    if (!dead) for (const w of walls) if (segHitsRect(ox, oy, b.x, b.y, w)) { dead = true; burst(ox, oy, '#cfd6df', 5, 140); break; }
+    if (!dead && !b.seek) for (const w of walls) if (segHitsRect(ox, oy, b.x, b.y, w)) { dead = true; burst(ox, oy, '#cfd6df', 5, 140); break; }
+    if (!dead && b.owner !== 'p') for (const w of builtWalls) if (segHitsRect(ox, oy, b.x, b.y, w)) { damageWall(w, b.dmg); dead = true; burst(ox, oy, '#c9a06a', 5, 140); break; }
     if (!dead) {
       if (b.owner === 'p') {
         for (const r of robots) if (Math.hypot(r.x - b.x, r.y - b.y) < r.r + 4) { hitRobot(r, b); dead = true; break; }
@@ -884,6 +1066,29 @@ function draw() {
   for (const w of walls) {
     ctx.fillStyle = '#5b6370'; rr(w.x, w.y, w.w, w.h, 5); ctx.fill();
     ctx.fillStyle = '#6f7886'; rr(w.x + 4, w.y + 4, w.w - 8, Math.min(12, w.h - 8), 3); ctx.fill();
+  }
+  // Byggede vægge (træ)
+  for (const w of builtWalls) {
+    ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(w.x + 5, w.y + 7, GS - 2, GS - 2);
+    ctx.fillStyle = w.flash > 0 ? '#f2d6a8' : '#9a6a38'; rr(w.x + 1, w.y + 1, GS - 2, GS - 2, 4); ctx.fill();
+    ctx.lineWidth = 3; ctx.strokeStyle = '#5e3d1c'; ctx.stroke();
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(70,42,18,.55)'; ctx.beginPath();
+    ctx.moveTo(w.x + 5, w.y + 17); ctx.lineTo(w.x + GS - 5, w.y + 17); ctx.moveTo(w.x + 5, w.y + 33); ctx.lineTo(w.x + GS - 5, w.y + 33);
+    ctx.moveTo(w.x + 25, w.y + 4); ctx.lineTo(w.x + 25, w.y + 17); ctx.moveTo(w.x + 14, w.y + 17); ctx.lineTo(w.x + 14, w.y + 33); ctx.moveTo(w.x + 36, w.y + 17); ctx.lineTo(w.x + 36, w.y + 33); ctx.stroke();
+    if (w.hp < w.maxHp) bar(w.x + 6, w.y - 7, GS - 12, 4, w.hp / w.maxHp, '#e0b23c');
+  }
+  // Forhåndsvisning af hvor højreklik bygger (computer) / hvor man kan bygge (telefon i byggetilstand)
+  if (state === 'play' && ((!isTouch && mouse.active) || (isTouch && buildMode))) {
+    if (!isTouch) {
+      const c = buildCheck(cam.x + mouse.x / zoom, cam.y + mouse.y / zoom);
+      if (c.i !== undefined && !staticSolid[c.i] && !builtAt[c.i] && Math.hypot(c.x + GS / 2 - player.x, c.y + GS / 2 - player.y) <= CFG.buildRange) {
+        ctx.setLineDash([6, 5]); ctx.lineWidth = 2; ctx.strokeStyle = c.ok ? 'rgba(255,220,150,.55)' : 'rgba(255,120,100,.5)';
+        ctx.strokeRect(c.x + 3, c.y + 3, GS - 6, GS - 6); ctx.setLineDash([]);
+      }
+    } else {
+      ctx.setLineDash([8, 8]); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,220,150,.45)';
+      circle(player.x, player.y, CFG.buildRange); ctx.stroke(); ctx.setLineDash([]);
+    }
   }
 
   for (const pu of powerups) {
@@ -1104,7 +1309,7 @@ function drawHUD() {
 function drawHUDInner() {
   const p = player, x = 18, y = 18, w = Math.min(300, VW - 190);
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = 'rgba(13,16,20,.75)'; rr(x - 10, y - 10, w + 20, 134, 12); ctx.fill();
+  ctx.fillStyle = 'rgba(13,16,20,.75)'; rr(x - 10, y - 10, w + 20, 160, 12); ctx.fill();
 
   // Liv
   const f = p.hp / player.maxHp;
@@ -1145,18 +1350,24 @@ function drawHUDInner() {
   }
   if (ready) {
     ctx.font = '800 12px system-ui,sans-serif'; ctx.fillStyle = '#ffd84a';
-    ctx.fillText(isTouch ? 'MISSIL KLAR – tryk på knappen' : 'MISSIL KLAR – tryk Q (eller højreklik)', x, y + 116);
+    ctx.fillText(isTouch ? 'MISSIL KLAR – tryk på knappen' : 'MISSIL KLAR – tryk Q', x, y + 142);
   }
+  // Byggemateriale
+  ctx.textAlign = 'left'; ctx.font = '700 12.5px system-ui,sans-serif'; ctx.fillStyle = '#e6c08a'; ctx.fillText('BYG', x, y + 121);
+  ctx.fillStyle = '#9a6a38'; rr(x + 52, y + 113, 16, 16, 3); ctx.fill(); ctx.strokeStyle = '#5e3d1c'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.font = '800 14px system-ui,sans-serif'; ctx.fillStyle = '#fff'; ctx.fillText(`× ${materials}`, x + 74, y + 121);
+  ctx.font = '600 12px system-ui,sans-serif'; ctx.fillStyle = '#93a0b0';
+  ctx.fillText(materials >= CFG.maxMaterials ? '(fuld)' : isTouch ? '· BYG-knappen' : '· højreklik for at bygge', x + 112, y + 121);
 
   // Skjult-status
   if (p.hidden && state === 'play') {
     const t = p.reveal > 0 ? 'Afsløret – du skød!' : 'Skjult i busken';
     ctx.font = '700 13px system-ui,sans-serif';
     const tw = ctx.measureText(t).width + 26;
-    ctx.fillStyle = p.reveal > 0 ? 'rgba(160,60,30,.85)' : 'rgba(40,120,60,.85)'; rr(x - 10, y + 134, tw, 28, 14); ctx.fill();
-    ctx.fillStyle = '#fff'; ctx.fillText(t, x + 3, y + 148.5);
+    ctx.fillStyle = p.reveal > 0 ? 'rgba(160,60,30,.85)' : 'rgba(40,120,60,.85)'; rr(x - 10, y + 160, tw, 28, 14); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.fillText(t, x + 3, y + 174.5);
   }
-  let by = y + (p.hidden && state === 'play' ? 168 : 134);
+  let by = y + (p.hidden && state === 'play' ? 194 : 160);
   for (const [k, txt] of [['damage', 'Dobbelt skade'], ['reload', 'Hurtig genladning']]) {
     if (buffs[k] <= 0) continue;
     const t = `${txt}  ${buffs[k].toFixed(1)} s`;
@@ -1204,6 +1415,13 @@ function drawJoysticks() {
   const pb = pauseBtn();
   circle(pb.x, pb.y, 20); ctx.fillStyle = 'rgba(13,16,20,.75)'; ctx.fill();
   ctx.fillStyle = '#dfe7f1'; ctx.fillRect(pb.x - 7, pb.y - 9, 5, 18); ctx.fillRect(pb.x + 2, pb.y - 9, 5, 18);
+  const bb = buildBtn();
+  circle(bb.x, bb.y, bb.r);
+  ctx.fillStyle = buildMode ? 'rgba(201,160,106,.95)' : 'rgba(40,46,56,.7)'; ctx.fill();
+  ctx.lineWidth = 3; ctx.strokeStyle = buildMode ? '#fff0d0' : 'rgba(201,160,106,.6)'; ctx.stroke();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '900 12px system-ui,sans-serif';
+  ctx.fillStyle = buildMode ? '#2a1a00' : '#e6c08a'; ctx.fillText(buildMode ? 'BYGGER' : 'BYG', bb.x, bb.y - 6);
+  ctx.font = '800 12px system-ui,sans-serif'; ctx.fillText('× ' + materials, bb.x, bb.y + 9);
   const sb = superBtn(), ready = superCharge >= CFG.superHits;
   circle(sb.x, sb.y, sb.r);
   ctx.fillStyle = ready ? `rgba(255,216,74,${0.75 + 0.2 * Math.sin(time * 8)})` : 'rgba(40,46,56,.7)'; ctx.fill();
@@ -1242,11 +1460,13 @@ function menu() {
       <li><b>Bevæg dig:</b> sæt venstre tommel på skærmen og træk</li>
       <li><b>Skyd:</b> tryk kort med højre tommel – sigter automatisk på den nærmeste robot</li>
       <li><b>Sigt selv:</b> træk med højre tommel og slip for at skyde</li>
+      <li><b>Byg:</b> tryk på BYG-knappen og så på banen, hvor væggen skal stå (tryk BYG igen for at skyde)</li>
       <li><b>Super:</b> den gule SUPER-knap · <b>Pause og admin:</b> pauseknappen ⏸ øverst</li>` : `
       <li><b>Bevæg dig:</b> W = op, A = venstre, S = ned, D = højre (piletaster virker også)</li>
       <li><b>Skyd:</b> mellemrum – sigter automatisk på den nærmeste robot, du kan se</li>
       <li><b>Sigt selv:</b> brug musen og venstreklik, hvis du hellere vil det</li>
-      <li><b>Super:</b> Q eller højreklik · <b>Pause:</b> P eller Esc · <b>Admin:</b> E</li>`;
+      <li><b>Byg en væg:</b> højreklik (hold og træk for at bygge flere)</li>
+      <li><b>Super:</b> Q · <b>Pause:</b> P eller Esc · <b>Admin:</b> E</li>`;
   const portrait = TOUCH && VH > VW;
   panel.innerHTML = `<h1>Robotjagt</h1><p>Overlev så mange bølger af robotter som muligt. <span style="color:#93a0b0">· v${VERSION}</span></p>
     <div class="menu-btns"><button id="go">Start spil</button><button class="sec" id="lognow">Ændringslog</button></div>
@@ -1257,7 +1477,7 @@ function menu() {
 ${controls}
       <li>Du har <b>3000 liv</b> og <b>3 skud</b>. Hvert skud lader selv op igen på 0,5 sekund – men først 0,25 sekund efter, at du har skudt.</li>
       <li>Efter <b>5 sekunder uden skade</b> får du 20 % liv tilbage hvert sekund.</li>
-      <li><b>Super:</b> hver 10. træffer giver et målsøgende missil. ${TOUCH ? 'Tryk på den gule <b>SUPER</b>-knap.' : 'Tryk <b>Q</b> (eller højreklik).'} Det jager selv den nærmeste robot, og eksplosionen tager 75 % af livet på alle robotter i et stort område (minibossen mister kun 20 % og bossen 8 %).</li>
+      <li><b>Super:</b> hver 10. træffer giver et målsøgende missil. ${TOUCH ? 'Tryk på den gule <b>SUPER</b>-knap.' : 'Tryk <b>Q</b>.'} Det jager selv den nærmeste robot, og eksplosionen tager 75 % af livet på alle robotter i et stort område (minibossen mister kun 20 % og bossen 8 %).</li>
       <li>Robotterne bliver stærkere for hver bølge: <b>+15 % liv</b> og <b>+12 % skade</b> pr. bølge.</li>
       <li>I bølge 1 har robotterne <b>1000 liv</b> – det kræver 4 skud. Der er fem slags:
         <br>• <b>Skyderobot</b> (grå) – skyder på afstand
@@ -1276,6 +1496,7 @@ ${controls}
         <br>• <b style="color:#b46bff">⚔ Lilla sværd</b> – <b>+25 % skade for altid</b> (kan samles flere gange)
         <br>• <b style="color:#2fe0d0">» Turkis lyn</b> – <b>+25 % skudhastighed for altid</b> (hurtigere genladning, kan samles flere gange)
         <br>• <b style="color:#3ee06a">▲ Grøn krystal</b> – giver dig <b>1 skud ekstra</b> for resten af spillet (op til 8)</li>
+      <li><b>Byg vægge:</b> du får 1 byggemateriale hvert 3. sekund (højst 30), og 1 materiale bygger 1 væg. Du kan selv gå og skyde igennem dine vægge – robotterne kan ikke. Robotterne går udenom, hvis der er en åbning, ellers skyder de væggen i stykker.</li>
       <li><b>Buske</b> skjuler dig. Men skyder du fra en busk, kan robotterne se dig et kort øjeblik – og kommer de helt tæt på, opdager de dig.</li>
     </ul>
     </details>`;
@@ -1289,6 +1510,8 @@ function pause() {
   showPanel(`<h1>Pause</h1><p>Bølge ${wave} · ${kills} robotter nedlagt</p>`, 'Fortsæt', resume);
   const ab = document.createElement('button'); ab.className = 'sec'; ab.textContent = '🔒 Admin'; ab.style.marginLeft = '8px';
   ab.onclick = openAdmin; panel.appendChild(ab);
+  const rb = document.createElement('button'); rb.className = 'sec'; rb.textContent = '↻ Genstart'; rb.style.marginLeft = '8px';
+  rb.onclick = () => { if (TOUCH) goFullscreen(); start(); }; panel.appendChild(rb);
 }
 function resume() { state = 'play'; overlay.classList.add('hidden'); last = performance.now(); }
 function gameOver() {
@@ -1361,6 +1584,8 @@ function adminControls() {
     <div class="admin-grid">
       <button data-a="god" class="${cheats.god ? 'on' : ''}">Udødelig: ${cheats.god ? 'TIL' : 'FRA'}</button>
       <button data-a="ammo" class="${cheats.ammo ? 'on' : ''}">Uendelige skud: ${cheats.ammo ? 'TIL' : 'FRA'}</button>
+      <button data-a="aimbot" class="${cheats.aimbot ? 'on' : ''}">Aimbot: ${cheats.aimbot ? 'TIL' : 'FRA'}</button>
+      <button data-a="mats">+20 byggemateriale</button>
       <button data-a="heal">Fyld liv</button>
       <button data-a="super">Fyld super</button>
       <button data-a="maxhp">+500 max liv</button>
@@ -1399,6 +1624,8 @@ function adminAction(a) {
   const hm = 1 + CFG.hpPerWave * (Math.max(1, wave) - 1);
   if (a === 'god') { cheats.god = !cheats.god; return adminControls(); }
   if (a === 'ammo') { cheats.ammo = !cheats.ammo; return adminControls(); }
+  if (a === 'aimbot') { cheats.aimbot = !cheats.aimbot; return adminControls(); }
+  if (a === 'mats') { materials += 20; adminToast('Byggemateriale: ' + materials); }
   if (a === 'heal') { p.hp = p.maxHp; adminToast('Liv fyldt op'); }
   if (a === 'super') { superCharge = CFG.superHits; adminToast('Super er klar'); }
   if (a === 'maxhp') { p.maxHp += CFG.maxHpBonus; p.hp += CFG.maxHpBonus; adminToast('Max liv: ' + p.maxHp); }

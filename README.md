@@ -13,7 +13,8 @@ Spillet virker både på computer og telefon. På telefonen går det i fuld skæ
 | Bevæg dig | W, A, S, D (eller piletaster) | Venstre tommel |
 | Skyd (automatisk sigte) | Mellemrum | Kort tryk med højre tommel |
 | Sigt selv | Mus + venstreklik | Træk med højre tommel og slip |
-| Super-missil | Q eller højreklik | SUPER-knappen |
+| Byg en væg | Højreklik (hold og træk for flere) | BYG-knappen, og tryk på banen |
+| Super-missil | Q | SUPER-knappen |
 | Pause | P eller Esc | Pauseknappen |
 | Admin-panel (kræver kode) | E | Pauseknappen → Admin |
 
@@ -22,6 +23,7 @@ Spillet virker både på computer og telefon. På telefonen går det i fuld skæ
 - 3000 liv og 3 skud, der lader op af sig selv
 - Regenerering: 20 % liv pr. sekund efter 5 sekunder uden skade
 - Buske, som robotterne ikke kan se dig i
+- Byg vægge: 1 byggemateriale hvert 3. sekund. Du kan gå og skyde igennem dine egne vægge, robotterne kan ikke – de går udenom eller skyder dem i stykker
 - Robotter: skyderobot, savrobot, flammerobot, teleport-robot og usynlig robot – de bliver stærkere hver bølge
 - Miniboss i hver bølge og boss hver 5. bølge, med flere angreb jo længere du kommer
 - Super: et målsøgende missil efter hver 10. træffer
