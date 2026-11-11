@@ -61,6 +61,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.15', d: '11-11-2026', items: ['Aimbot: du sigter nu selv – skuddene søger bare mod robotterne og har uendelig rækkevidde'] },
   { v: '1.14', d: '11-11-2026', items: ['Byg vægge: 1 byggemateriale hvert 3. sekund, 1 materiale = 1 væg. Højreklik for at bygge (BYG-knap på telefon)', 'Du kan gå og skyde igennem dine egne vægge – robotterne kan ikke', 'Robotterne finder vej uden om mure og vægge, går gennem åbninger og skyder kun vægge i stykker, hvis der ikke er en anden vej', 'Robotterne hører dig og kommer efter dig – undtagen når du gemmer dig i en busk', 'Admin: aimbot (uendelig rækkevidde og målsøgende skud) og +20 byggemateriale', 'Genstart-knap i pause-menuen', 'Super-missilet er nu kun på Q (højreklik bruges til at bygge)'] },
   { v: '1.13', d: '11-11-2026', items: ['Bedre på telefon: fuld skærm når du starter, og HUD\'en skaleres ned på små skærme', 'Startskærmen viser telefon-styring på telefoner og tastatur-styring på computer', 'Spillet holder pause, hvis du skifter app', 'Spillet kan spilles på keha.dk/robotspil'] },
   { v: '1.12', d: '11-11-2026', items: ['Admin: powerups gives direkte til dig og lægges oveni det, du har – du skal ikke samle dem op (ingen lofter, og 2× og genladning forlænges)', 'Ny robot: teleport-robot (fra bølge 3) – blinker, forsvinder og dukker op et nyt sted', 'Ny robot: usynlig robot (fra bølge 4) – kun dens lyseblå skud kan ses, og den automatiske sigte rammer den ikke'] },
@@ -545,7 +546,6 @@ function tryShoot(angle) {
   const p = player;
   if (p.ammo < 1 || p.fireCd > 0) return;
   p.ammo -= 1; p.fireCd = CFG.fireGap / p.rateMul; p.reveal = 0.9; p.reloadPause = CFG.reloadPause / p.rateMul;
-  if (cheats.aimbot) { const t = nearestRobot(p.x, p.y); if (t) angle = p.angle = Math.atan2(t.y - p.y, t.x - p.x); }
   const c = Math.cos(angle), s = Math.sin(angle);
   bullets.push({ x: p.x + c * 28, y: p.y + s * 28, vx: c * CFG.bulletSpeed, vy: s * CFG.bulletSpeed, seek: cheats.aimbot,
     life: cheats.aimbot ? 8 : CFG.bulletRange / CFG.bulletSpeed, owner: 'p', dmg: CFG.shotDamage * player.dmgMul * (buffs.damage > 0 ? 2 : 1), strong: buffs.damage > 0 });
@@ -819,7 +819,7 @@ function updatePlayer(dt) {
   p.x += mx * CFG.playerSpeed * dt; p.y += my * CFG.playerSpeed * dt; pushOut(p, true);
 
   // Automatisk sigte: mellemrum (eller når musen ikke bruges) sigter mod nærmeste robot man kan se
-  const autoTarget = cheats.aimbot ? nearestRobot(p.x, p.y) : (keys.has('Space') || (!mouse.active && !touch.aim)) ? nearestVisibleRobot() : null;
+  const autoTarget = (keys.has('Space') || (!mouse.active && !touch.aim)) ? nearestVisibleRobot() : null;
   if (autoTarget) {
     p.angle = Math.atan2(autoTarget.y - p.y, autoTarget.x - p.x);
   } else if (touch.aim) {
