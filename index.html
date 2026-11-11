@@ -43,6 +43,8 @@
   .hs-form input{flex:1}
   .hs-form button{margin:0}
   .muted{color:#93a0b0;font-size:13px}
+  .hs-h{font-weight:800;font-size:15px;text-align:left;margin:12px 0 0;color:#ffd84a}
+  @media (max-height:500px){.stats{margin:8px 0 2px}.stat{padding:6px 12px}.stat .n{font-size:20px}table.hs{font-size:13px;margin:4px 0}table.hs td{padding:3px 6px}.panel h1{margin-bottom:0}}
   @media (max-width:600px),(max-height:500px){.panel{padding:18px 18px}.panel h1{font-size:26px}.panel ul{font-size:14px}}
   .log{text-align:left;max-height:55vh;overflow:auto;margin:10px 0;padding-right:6px}
   .log h3{margin:14px 0 2px;font-size:16px}
@@ -70,6 +72,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.19', d: '11-11-2026', items: ['Highscore-tavlen vises altid sammen med "Spil igen", når du dør – knapperne kommer først, når tavlen er hentet', 'Mere kompakt game over-skærm på telefoner på langs'] },
   { v: '1.18', d: '11-11-2026', items: ['Highscore-tavle med top 10 – skriv dit navn, når du kommer på', 'På keha.dk/robotspil er tavlen fælles for alle spillere', 'Runder hvor admin-panelet er brugt, kommer ikke på tavlen', 'Ny knap på startskærmen: 🏆 Highscore'] },
   { v: '1.17', d: '11-11-2026', items: ['Du beholder alle våben, du samler op, og kan skifte mellem dem: 1 = pistol, 2, 3 … i den rækkefølge du samlede dem op', 'Skift med tasterne 1–5 eller ved at klikke/trykke på våbnene nederst på skærmen', 'Der dukker kun våben op, som du ikke har endnu'] },
   { v: '1.16', d: '11-11-2026', items: ['Sjældne våben at samle op: shotgun (10 hagl, langsom), minigun (mega hurtig), sniper (uendelig rækkevidde, 4× skade, langsom) og rifle (hurtigere og lidt mere skade)', 'Et våben dukker op cirka hvert 45. sekund, og bossen taber et, når den dør', 'Dit våben står i HUD\'en, og det ses i hånden på din figur', 'Admin: vælg våben eller læg et våben på banen'] },
@@ -1685,9 +1688,10 @@ function hsQualifies(list, k, w) {
   return hsSort({ kills: k, wave: w }, last) < 0;
 }
 function hsTable(list, mark) {
-  if (list === null) return '<p class="muted">Highscore-tavlen kunne ikke hentes lige nu.</p>';
-  if (!list.length) return '<p class="muted">Tavlen er tom – bliv den første!</p>';
-  return '<table class="hs"><tr><th>#</th><th>Navn</th><th class="n">Nedlagt</th><th class="n">Bølge</th></tr>' +
+  const h = '<div class="hs-h">🏆 Top 10</div>';
+  if (list === null) return h + '<p class="muted">Highscore-tavlen kunne ikke hentes lige nu.</p>';
+  if (!list.length) return h + '<p class="muted">Tavlen er tom – bliv den første!</p>';
+  return h + '<table class="hs"><tr><th>#</th><th>Navn</th><th class="n">Nedlagt</th><th class="n">Bølge</th></tr>' +
     list.map((e, i) => `<tr class="${mark && e.name === mark.name && e.kills === mark.kills && e.wave === mark.wave ? 'me' : ''}"><td>${i + 1}</td><td>${esc(e.name)}</td><td class="n">${e.kills}</td><td class="n">${e.wave}</td></tr>`).join('') + '</table>';
 }
 const hsWhere = () => HS_SHARED ? 'Fælles tavle for alle på keha.dk' : 'Gemt på denne enhed';
@@ -1714,8 +1718,8 @@ async function gameOverPanel() {
       </div>${rekord && k > 0 ? '<p><b>Ny rekord!</b></p>' : ''}`;
   const btns = `<div class="menu-btns"><button id="go">Spil igen</button><button class="sec" id="hsmenu">Menu</button></div>`;
   const wire = () => { document.getElementById('go').onclick = again; document.getElementById('hsmenu').onclick = menu; };
-  panel.innerHTML = head + '<p class="muted">Henter highscore…</p>' + btns; overlay.classList.remove('hidden'); wire();
-  const list = await hsLoad();
+  panel.innerHTML = head + '<p class="muted">Henter highscore…</p>'; overlay.classList.remove('hidden');
+  const list = await Promise.race([hsLoad(), new Promise(r => setTimeout(() => r(null), 5000))]);
   if (state !== 'over') return;
   let mid;
   if (usedAdmin) mid = '<p class="muted">Du har brugt admin-panelet i denne runde, så den kommer ikke på highscore-tavlen.</p>' + hsTable(list);
