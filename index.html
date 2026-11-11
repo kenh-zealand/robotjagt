@@ -50,6 +50,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.11', d: '11-11-2026', items: ['Admin: vælg hvor mange powerups der skal lægges ved dig (1–50 ad gangen)'] },
   { v: '1.10', d: '11-11-2026', items: ['Admin-panelet åbnes nu med tasten E (før O)', 'Super-missilet er flyttet til tasten Q – højreklik virker stadig'] },
   { v: '1.9', d: '11-11-2026', items: ['Versionsnummer nederst i venstre hjørne', 'Ændringslog – klik på versionsnummeret for at se den'] },
   { v: '1.8', d: '11-11-2026', items: ['Nyt permanent powerup: turkis lyn » giver +25 % skudhastighed for altid (kan samles flere gange)'] },
@@ -234,7 +235,7 @@ function moveDir(o, dx, dy, step) {
 
 // ---------- Spiltilstand ----------
 const cheats = { god: false, ammo: false };
-let adminUnlocked = false, adminFrom = 'play';
+let adminUnlocked = false, adminFrom = 'play', adminCount = 1;
 let ammoTimer, maxHpTimer, permDmgTimer, permRateTimer, player, robots, bullets, particles, missiles, rings, powerups, popups, powerTimer, buffs, superCharge, wave, kills, time, waveTimer, shake = 0, state = 'menu';
 let bannerText = '', bannerT = 0;
 const cam = { x: 0, y: 0 };
@@ -1286,6 +1287,7 @@ function adminControls() {
     </div>
     <div class="admin-row"><span>Gå til bølge</span><input id="admwave" type="number" min="1" max="99" value="${Math.max(1, wave)}"><button data-a="gowave" style="margin:0">Gå</button></div>
     <div class="adm-h">Powerups ved dig</div>
+    <div class="admin-row"><span>Antal</span><input id="admcount" type="number" min="1" max="50" value="${adminCount}"></div>
     <div class="admin-grid">
       <button data-a="p-heal">+ Helbredelse</button>
       <button data-a="p-damage">2× Dobbelt skade</button>
@@ -1322,9 +1324,16 @@ function adminAction(a) {
   if (a === 'boss') { const w = wave; if (w < 1) wave = 1; spawnBoss(hm); robots[robots.length - 1].kit = bossKit(Math.max(CFG.bossEvery, wave)); wave = w; adminToast('Boss lavet'); }
   if (a === 'mini') { const w = wave; if (w < 1) wave = 1; spawnMini(hm); wave = w; adminToast('Miniboss lavet'); }
   if (a.startsWith('p-')) {
-    const t = a.slice(2), ang = rand(0, Math.PI * 2);
-    const pt = { x: clamp(p.x + Math.cos(ang) * 90, 40, WORLD.w - 40), y: clamp(p.y + Math.sin(ang) * 90, 40, WORLD.h - 40) };
-    powerups.push({ x: pt.x, y: pt.y, type: t, t: 0 }); adminToast(POWER[t].name.replace('!', '') + ' lagt ved dig');
+    const t = a.slice(2);
+    const n = clamp(parseInt(document.getElementById('admcount').value, 10) || 1, 1, 50);
+    adminCount = n; document.getElementById('admcount').value = n;
+    const a0 = rand(0, Math.PI * 2);
+    for (let i = 0; i < n; i++) {
+      // lægges i ringe rundt om dig, så de ikke ligger oven i hinanden
+      const ringNo = Math.floor(i / 8), ang = a0 + (i % 8) / Math.min(8, n - ringNo * 8) * Math.PI * 2 + ringNo * 0.4, rad = 90 + ringNo * 55;
+      powerups.push({ x: clamp(p.x + Math.cos(ang) * rad, 40, WORLD.w - 40), y: clamp(p.y + Math.sin(ang) * rad, 40, WORLD.h - 40), type: t, t: rand(0, 6) });
+    }
+    adminToast(`${n} × ${POWER[t].name.replace('!', '')} lagt ved dig`);
   }
 }
 
