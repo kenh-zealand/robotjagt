@@ -75,6 +75,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.24', d: '11-11-2026', items: ['Savrobotter skal hugge præcis 10 gange for at ødelægge en bygget væg – uanset bølge'] },
   { v: '1.23', d: '11-11-2026', items: ['Minibossen kan ikke længere lave spurt', 'Alle flammekastere gør 50 % mindre skade (flammerobot, miniboss og boss)'] },
   { v: '1.22', d: '11-11-2026', items: ['Admin-tilstand på startskærmen: alle kan bruge admin-panelet uden kode – men runden tæller ikke på highscore-tavlen', 'Highscore-knap i pause-menuen'] },
   { v: '1.21', d: '11-11-2026', items: ['Nederst står der nu "Made by agent7329"'] },
@@ -124,7 +125,8 @@ const CFG = {
   robotFire: 1.0,
   sawSpeed: 185,        // savrobot: hurtig, skal helt tæt på
   sawDamage: 250,       // pr. hug
-  sawTick: 0.25,        // hug hvert 0,25 sek. = 1000 skade pr. sek.
+  sawTick: 0.25,
+  sawHitsPerWall: 10,   // en savrobot skal hugge 10 gange for at ødelægge en bygget væg        // hug hvert 0,25 sek. = 1000 skade pr. sek.
   flameRange: 240,      // flammerobot: kort rækkevidde
   flameDps: 400,        // skade pr. sekund i flammen (halveret i v1.23)
   closeSight: 75,       // så tæt på kan robotter se dig, selv i en busk
@@ -374,9 +376,9 @@ function navigate(r, tx, ty, step) {
   r.angle = Math.atan2(n.y - r.y, n.x - r.x); moveDir(r, n.x - r.x, n.y - r.y, step);
 }
 function waveDmgMul() { return 1 + CFG.dmgPerWave * (Math.max(1, wave) - 1); }
-function damageWall(w, dmg) {
+function damageWall(w, dmg, raw) {
   if (!builtAt[w.i]) return;
-  w.hp -= dmg * waveDmgMul(); w.flash = 0.1;
+  w.hp -= raw ? dmg : dmg * waveDmgMul(); w.flash = 0.1;
   if (w.hp <= 0) {
     builtWalls.splice(builtWalls.indexOf(w), 1); builtAt[w.i] = null; flowDirty = true;
     burst(w.x + GS / 2, w.y + GS / 2, '#b07a40', 22, 260); burst(w.x + GS / 2, w.y + GS / 2, '#6e4a24', 12, 180);
@@ -387,7 +389,7 @@ function attackWall(r, dt) {
   const wx = w.x + GS / 2, wy = w.y + GS / 2, d = Math.hypot(wx - r.x, wy - r.y);
   r.angle = Math.atan2(wy - r.y, wx - r.x);
   if (r.type === 'saw') {
-    if (d < r.r + GS * 0.5 + 14) { r.sawCd -= dt; if (r.sawCd <= 0) { damageWall(w, CFG.sawDamage); r.sawCd = CFG.sawTick; burst(wx, wy, '#ffe9a8', 5, 200); } }
+    if (d < r.r + GS * 0.5 + 14) { r.sawCd -= dt; if (r.sawCd <= 0) { damageWall(w, w.maxHp / CFG.sawHitsPerWall + 0.01, true); r.sawCd = CFG.sawTick; burst(wx, wy, '#ffe9a8', 5, 200); } }
     return;
   }
   if (r.type === 'flame') {
