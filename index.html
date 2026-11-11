@@ -75,6 +75,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.28', d: '11-11-2026', items: ['Rettet: admin-ting (udødelig, uendelige skud, aimbot, uendelig rækkevidde, wallhack) slås nu fra, når en ny runde starter', 'En runde, hvor der på noget tidspunkt er admin-ting slået til, kommer aldrig på highscore-tavlen'] },
   { v: '1.27', d: '11-11-2026', items: ['Rettet: man kunne skyde i det uendelige ved at holde skydeknappen nede (især shotgun og sniper). Nu lader våbnet først op, når man slipper knappen'] },
   { v: '1.26', d: '11-11-2026', items: ['Admin: uendelig rækkevidde – alle dine våben skyder uendeligt langt, og automatisk sigte når robotter i hele banen', 'Admin: wallhack – dine skud går igennem mure, og automatisk sigte kan sigte gennem mure'] },
   { v: '1.25', d: '11-11-2026', items: ['Normal-knap i admin-tilstand (i pause-menuen, admin-panelet og ved game over) – starter en ny almindelig runde, der kan komme på highscore-tavlen'] },
@@ -932,6 +933,7 @@ function update(dt) {
 
 function updatePlayer(dt) {
   const p = player;
+  if (Object.values(cheats).some(Boolean)) usedAdmin = true; // sikkerhedsnet: snyd slået til = admin-runde
   let mx = 0, my = 0;
   if (keys.has('KeyA') || keys.has('ArrowLeft')) mx--;
   if (keys.has('KeyD') || keys.has('ArrowRight')) mx++;
@@ -1657,7 +1659,7 @@ ${controls}
   document.getElementById('hsnow').onclick = () => openHighscore('menu');
 }
 // admin = true: admin-tilstand – alle har admin uden kode, men runden tæller ikke på highscore
-function start(admin) { reset(); adminMode = !!admin; usedAdmin = adminMode; state = 'play'; overlay.classList.add('hidden'); last = performance.now(); }
+function start(admin) { reset(); for (const k in cheats) cheats[k] = false; adminMode = !!admin; usedAdmin = adminMode; state = 'play'; overlay.classList.add('hidden'); last = performance.now(); }
 function pause() {
   state = 'pause'; mouse.down = false; keys.clear();
   showPanel(`<h1>Pause</h1><p>Bølge ${wave} · ${kills} robotter nedlagt</p>`, 'Fortsæt', resume);
