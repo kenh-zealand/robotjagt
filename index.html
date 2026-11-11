@@ -75,6 +75,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.31', d: '11-11-2026', items: ['Rettet: spillet kunne fryse ("Siden svarer ikke") i op til 12 sekunder, når der var bygget mange vægge. Årsagen var en regnefejl i robotternes vejfinding, som fik den til at regne de samme felter om igen og igen', 'Vægge slås nu op i et gitter i stedet for at blive gennemgået én for én', 'Mindre arbejde for computeren i hvert billede (ingen unødvendige kopier af lister)', 'Loft over antal effekter, så telefoner ikke går i stå', 'En fejl i ét billede stopper ikke længere hele spillet – det kører videre'] },
   { v: '1.30', d: '11-11-2026', items: ['Man kan nu skifte tilbage til admin-tilstand fra et normalt spil: knap i pause-menuen og ved game over', 'Menu-knap i pause-menuen'] },
   { v: '1.29', d: '11-11-2026', items: ['Når spillet ikke kører på keha.dk, står der nu tydeligt, at tavlen kun gælder denne enhed, med et link til den fælles tavle på keha.dk/robotspil'] },
   { v: '1.28', d: '11-11-2026', items: ['Rettet: admin-ting (udødelig, uendelige skud, aimbot, uendelig rækkevidde, wallhack) slås nu fra, når en ny runde starter', 'En runde, hvor der på noget tidspunkt er admin-ting slået til, kommer aldrig på highscore-tavlen'] },
@@ -169,6 +170,7 @@ const CFG = {
   hearRange: 650,       // robotter hører dig inden for denne afstand (ikke når du er i en busk)
   weaponFirst: 30,      // første våben dukker op efter 30 sek.
   weaponEvery: [40, 55],// derefter et sjældent våben hvert 40–55 sek.
+  maxParticles: 900,    // højst så mange effekt-partikler på én gang
   maxPowerups: 4,       // højst så mange powerups på banen ad gangen
   healAmount: 1200,     // helbredelse: +1200 liv
   buffTime: 10,         // skade- og genladnings-powerup varer 10 sek.
@@ -253,16 +255,27 @@ for (const b of bushes) {
 
 let builtWalls = []; // vægge spilleren har bygget
 let weaponDrops = [], weaponTimer = 0;
+// Byggede vægge slås op i feltgitteret (builtAt), så kun de få vægge tæt på tjekkes.
+// Før blev ALLE vægge gennemgået hver gang – med mange vægge kunne spillet fryse i op til 12 sekunder.
+function builtInBox(ax, ay, bx, by, fn) {
+  const c0 = clamp(Math.floor(ax / GS), 0, GW - 1), c1 = clamp(Math.floor(bx / GS), 0, GW - 1);
+  const r0 = clamp(Math.floor(ay / GS), 0, GH - 1), r1 = clamp(Math.floor(by / GS), 0, GH - 1);
+  for (let cy = r0; cy <= r1; cy++) for (let cx = c0; cx <= c1; cx++) { const w = builtAt[cy * GW + cx]; if (w && fn(w)) return w; }
+  return null;
+}
+function circleHitsRect(x, y, r, w) { const cx = clamp(x, w.x, w.x + w.w), cy = clamp(y, w.y, w.y + w.h); return (x - cx) ** 2 + (y - cy) ** 2 < r * r; }
 function hitsWall(x, y, r) {
-  for (const w of walls.concat(builtWalls)) {
-    const cx = clamp(x, w.x, w.x + w.w), cy = clamp(y, w.y, w.y + w.h);
-    if ((x - cx) ** 2 + (y - cy) ** 2 < r * r) return true;
-  }
-  return false;
+  for (const w of walls) if (circleHitsRect(x, y, r, w)) return true;
+  return !!builtInBox(x - r, y - r, x + r, y + r, w => circleHitsRect(x, y, r, w));
 }
 // skipBuilt = true for spilleren: man kan selv gå igennem sine egne vægge
 function pushOut(o, skipBuilt) {
-  for (const w of (skipBuilt ? walls : walls.concat(builtWalls))) {
+  for (const w of walls) pushRect(o, w);
+  if (!skipBuilt) builtInBox(o.x - o.r - 1, o.y - o.r - 1, o.x + o.r + 1, o.y + o.r + 1, w => { pushRect(o, w); return false; });
+  o.x = clamp(o.x, o.r, WORLD.w - o.r); o.y = clamp(o.y, o.r, WORLD.h - o.r);
+}
+function pushRect(o, w) {
+  {
     const cx = clamp(o.x, w.x, w.x + w.w), cy = clamp(o.y, w.y, w.y + w.h);
     const dx = o.x - cx, dy = o.y - cy, d2 = dx * dx + dy * dy;
     if (d2 < o.r * o.r) {
@@ -274,21 +287,21 @@ function pushOut(o, skipBuilt) {
       }
     }
   }
-  o.x = clamp(o.x, o.r, WORLD.w - o.r); o.y = clamp(o.y, o.r, WORLD.h - o.r);
 }
-function segHitsRect(x1, y1, x2, y2, w) {
-  let t0 = 0, t1 = 1; const dx = x2 - x1, dy = y2 - y1;
-  const p = [-dx, dx, -dy, dy], q = [x1 - w.x, w.x + w.w - x1, y1 - w.y, w.y + w.h - y1];
-  for (let i = 0; i < 4; i++) {
-    if (p[i] === 0) { if (q[i] < 0) return false; }
-    else {
-      const t = q[i] / p[i];
-      if (p[i] < 0) { if (t > t1) return false; if (t > t0) t0 = t; }
-      else { if (t < t0) return false; if (t < t1) t1 = t; }
-    }
-  }
+// Linje mod rektangel (Liang–Barsky) – uden at oprette nye objekter, så der ikke skabes affald hvert billede
+let CT0 = 0, CT1 = 1;
+function clipT(p, q) {
+  if (p === 0) return q >= 0;
+  const t = q / p;
+  if (p < 0) { if (t > CT1) return false; if (t > CT0) CT0 = t; }
+  else { if (t < CT0) return false; if (t < CT1) CT1 = t; }
   return true;
 }
+function segHitsBox(x1, y1, x2, y2, ax, ay, bx, by) {
+  CT0 = 0; CT1 = 1; const dx = x2 - x1, dy = y2 - y1;
+  return clipT(-dx, x1 - ax) && clipT(dx, bx - x1) && clipT(-dy, y1 - ay) && clipT(dy, by - y1);
+}
+function segHitsRect(x1, y1, x2, y2, w) { return segHitsBox(x1, y1, x2, y2, w.x, w.y, w.x + w.w, w.y + w.h); }
 function lineOfSight(a, b) { for (const w of walls) if (segHitsRect(a.x, a.y, b.x, b.y, w)) return false; return true; }
 function inBush(p) { for (const b of bushes) if (p.x > b.x && p.x < b.x + b.w && p.y > b.y && p.y < b.y + b.h) return b; return null; }
 function randomFreePoint() {
@@ -314,7 +327,7 @@ for (let cy = 0; cy < GH; cy++) for (let cx = 0; cx < GW; cx++) {
   }
 }
 const builtAt = new Array(GW * GH).fill(null);
-const flow = new Float32Array(GW * GH);
+const flow = new Float64Array(GW * GH); // fuld præcision – med Float32 blev de samme felter regnet om igen og igen (frys)
 let flowDirty = true, flowTimer = 0, materials = 0, matTimer = 0, buildMode = false;
 const cellOf = (x, y) => clamp(Math.floor(y / GS), 0, GH - 1) * GW + clamp(Math.floor(x / GS), 0, GW - 1);
 
@@ -357,15 +370,14 @@ function flowNext(r) {
   return { x: (best % GW) * GS + GS / 2, y: ((best / GW) | 0) * GS + GS / 2, wall: builtAt[best] };
 }
 function clearPath(a, b, rad) {
-  for (const w of walls.concat(builtWalls))
-    if (segHitsRect(a.x, a.y, b.x, b.y, { x: w.x - rad, y: w.y - rad, w: w.w + 2 * rad, h: w.h + 2 * rad })) return false;
-  return true;
+  for (const w of walls) if (segHitsBox(a.x, a.y, b.x, b.y, w.x - rad, w.y - rad, w.x + w.w + rad, w.y + w.h + rad)) return false;
+  return !builtInBox(Math.min(a.x, b.x) - rad, Math.min(a.y, b.y) - rad, Math.max(a.x, b.x) + rad, Math.max(a.y, b.y) + rad,
+    w => segHitsBox(a.x, a.y, b.x, b.y, w.x - rad, w.y - rad, w.x + w.w + rad, w.y + w.h + rad));
 }
 // Robotternes syn: både mure og byggede vægge skjuler dig
 function losRobot(a, b) {
   if (!lineOfSight(a, b)) return false;
-  for (const w of builtWalls) if (segHitsRect(a.x, a.y, b.x, b.y, w)) return false;
-  return true;
+  return !builtInBox(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.max(a.x, b.x), Math.max(a.y, b.y), w => segHitsRect(a.x, a.y, b.x, b.y, w));
 }
 function navigate(r, tx, ty, step) {
   r.wallTarget = null;
@@ -730,7 +742,7 @@ function spawnPowerup(forced) {
   const counts = {}; for (const pu of powerups) counts[pu.type] = (counts[pu.type] || 0) + 1;
   const free = types.filter(t => !counts[t]);
   const type = forced || (free.length ? free : types)[Math.floor(Math.random() * (free.length || types.length))];
-  for (let i = 0; i < 200; i++) {
+  for (let i = 0; i < 40; i++) {
     const pt = randomFreePoint();
     if (inBush(pt) || Math.hypot(pt.x - player.x, pt.y - player.y) < 250) continue;
     if (powerups.some(o => Math.hypot(o.x - pt.x, o.y - pt.y) < 200)) continue;
@@ -827,7 +839,7 @@ function spawnWeaponDrop(type, x, y) {
     type = opts[Math.floor(Math.random() * opts.length)];
   }
   if (x === undefined) {
-    for (let i = 0; i < 200; i++) {
+    for (let i = 0; i < 40; i++) {
       const pt = randomFreePoint();
       if (inBush(pt) || Math.hypot(pt.x - player.x, pt.y - player.y) < 300) continue;
       x = pt.x; y = pt.y; break;
@@ -1156,7 +1168,10 @@ function updateBullets(dt) {
     b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
     let dead = b.life <= 0 || b.x < 0 || b.y < 0 || b.x > WORLD.w || b.y > WORLD.h;
     if (!dead && !b.seek && !b.thru) for (const w of walls) if (segHitsRect(ox, oy, b.x, b.y, w)) { dead = true; burst(ox, oy, '#cfd6df', 5, 140); break; }
-    if (!dead && b.owner !== 'p') for (const w of builtWalls) if (segHitsRect(ox, oy, b.x, b.y, w)) { damageWall(w, b.dmg); dead = true; burst(ox, oy, '#c9a06a', 5, 140); break; }
+    if (!dead && b.owner !== 'p') {
+      const hw = builtInBox(Math.min(ox, b.x), Math.min(oy, b.y), Math.max(ox, b.x), Math.max(oy, b.y), w => segHitsRect(ox, oy, b.x, b.y, w));
+      if (hw) { damageWall(hw, b.dmg); dead = true; burst(ox, oy, '#c9a06a', 5, 140); }
+    }
     if (!dead) {
       if (b.owner === 'p') {
         for (const r of robots) if (Math.hypot(r.x - b.x, r.y - b.y) < r.r + 4) { hitRobot(r, b); dead = true; break; }
@@ -1166,6 +1181,7 @@ function updateBullets(dt) {
   }
 }
 function updateParticles(dt) {
+  if (particles.length > CFG.maxParticles) particles.splice(0, particles.length - CFG.maxParticles); // loft over effekter, så telefoner ikke går i stå
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i], dr = p.drag || 0.9; p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= dr; p.vy *= dr; p.life -= dt;
     if (p.life <= 0) particles.splice(i, 1);
@@ -1930,13 +1946,21 @@ function adminAction(a) {
 
 // ---------- Løkke ----------
 let last = performance.now();
+// En fejl i ét billede må ikke stoppe hele spillet: næste billede bestilles først, og fejl fanges og vises kort.
+let errShownAt = -99;
+function reportError(e) {
+  try { console.error('Robotjagt-fejl:', e); localStorage.setItem('robotjagt_lasterror', new Date().toISOString() + ' v' + VERSION + ': ' + (e && e.stack || e)); } catch (er) {}
+  const nowS = performance.now() / 1000;
+  if (nowS - errShownAt > 5) { errShownAt = nowS; popups.push({ x: player.x, y: player.y - 80, text: 'Der skete en fejl – spillet kører videre', color: '#ff9a8a', t: 0 }); }
+}
+addEventListener('error', e => reportError(e.error || e.message));
 function loop(now) {
-  const dt = Math.min(0.033, (now - last) / 1000); last = now;
-  if (state === 'play') update(dt);
-  if (state !== 'pause' && state !== 'admin' && state !== 'log') updateParticles(dt);
-  draw();
-  document.getElementById('foot').classList.toggle('hidden', state === 'play' && isTouch);
   requestAnimationFrame(loop);
+  const dt = Math.min(0.033, (now - last) / 1000); last = now;
+  try { if (state === 'play') update(dt); } catch (e) { reportError(e); }
+  try { if (state !== 'pause' && state !== 'admin' && state !== 'log') updateParticles(dt); } catch (e) { reportError(e); }
+  try { draw(); } catch (e) { reportError(e); try { ctx.restore(); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); } catch (er) {} }
+  document.getElementById('foot').classList.toggle('hidden', state === 'play' && isTouch);
 }
 reset(); menu();
 requestAnimationFrame(loop);
