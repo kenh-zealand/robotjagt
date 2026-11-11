@@ -75,6 +75,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.25', d: '11-11-2026', items: ['Normal-knap i admin-tilstand (i pause-menuen, admin-panelet og ved game over) – starter en ny almindelig runde, der kan komme på highscore-tavlen'] },
   { v: '1.24', d: '11-11-2026', items: ['Savrobotter skal hugge præcis 10 gange for at ødelægge en bygget væg – uanset bølge'] },
   { v: '1.23', d: '11-11-2026', items: ['Minibossen kan ikke længere lave spurt', 'Alle flammekastere gør 50 % mindre skade (flammerobot, miniboss og boss)'] },
   { v: '1.22', d: '11-11-2026', items: ['Admin-tilstand på startskærmen: alle kan bruge admin-panelet uden kode – men runden tæller ikke på highscore-tavlen', 'Highscore-knap i pause-menuen'] },
@@ -1661,6 +1662,11 @@ function pause() {
   rb.onclick = () => { if (TOUCH) goFullscreen(); start(adminMode); }; panel.appendChild(rb);
   const hb = document.createElement('button'); hb.className = 'sec'; hb.textContent = '🏆 Highscore'; hb.style.marginLeft = '8px';
   hb.onclick = () => openHighscore('pause'); panel.appendChild(hb);
+  if (adminMode) {
+    const nb = document.createElement('button'); nb.textContent = '▶ Normal (ny runde)'; nb.style.marginLeft = '8px';
+    nb.onclick = () => { if (TOUCH) goFullscreen(); start(false); }; panel.appendChild(nb);
+    const tip = document.createElement('p'); tip.className = 'tip'; tip.textContent = 'Du spiller i admin-tilstand. "Normal" starter en ny runde, der kan komme på highscore-tavlen.'; panel.appendChild(tip);
+  }
 }
 function resume() { state = 'play'; overlay.classList.add('hidden'); last = performance.now(); }
 function gameOver() {
@@ -1731,8 +1737,13 @@ async function gameOverPanel() {
         <div class="stat"><div class="n">${k}</div><div class="l">Nedlagt</div></div>
         <div class="stat"><div class="n">${best}</div><div class="l">Din rekord</div></div>
       </div>${rekord && k > 0 ? '<p><b>Ny rekord!</b></p>' : ''}`;
-  const btns = `<div class="menu-btns"><button id="go">Spil igen</button><button class="sec" id="hsmenu">Menu</button></div>`;
-  const wire = () => { document.getElementById('go').onclick = again; document.getElementById('hsmenu').onclick = menu; };
+  const btns = adminMode
+    ? `<div class="menu-btns"><button id="gonormal">▶ Spil normalt</button><button class="sec" id="go">Spil igen (admin)</button><button class="sec" id="hsmenu">Menu</button></div>`
+    : `<div class="menu-btns"><button id="go">Spil igen</button><button class="sec" id="hsmenu">Menu</button></div>`;
+  const wire = () => {
+    document.getElementById('go').onclick = again; document.getElementById('hsmenu').onclick = menu;
+    const gn = document.getElementById('gonormal'); if (gn) gn.onclick = () => { if (TOUCH) goFullscreen(); start(false); };
+  };
   panel.innerHTML = head + '<p class="muted">Henter highscore…</p>'; overlay.classList.remove('hidden');
   const list = await Promise.race([hsLoad(), new Promise(r => setTimeout(() => r(null), 5000))]);
   if (state !== 'over') return;
@@ -1854,9 +1865,10 @@ function adminControls() {
       <button data-a="p-permrate">» Turkis lyn</button>
     </div>
     <div class="err" id="admmsg" style="color:#6fe39a"></div>
-    <button id="admclose">Tilbage til spillet</button>${adminMode ? '' : ' <button id="admlogout" class="sec">🔒 Log ud</button>'}`;
+    <button id="admclose">Tilbage til spillet</button>${adminMode ? ' <button id="admnormal" class="sec">▶ Normal (ny runde)</button>' : ' <button id="admlogout" class="sec">🔒 Log ud</button>'}`;
   document.getElementById('admclose').onclick = closeAdmin;
   const lo = document.getElementById('admlogout'); if (lo) lo.onclick = () => { adminUnlocked = false; closeAdmin(); };
+  const an = document.getElementById('admnormal'); if (an) an.onclick = () => { if (TOUCH) goFullscreen(); start(false); };
   panel.querySelectorAll('[data-a]').forEach(b => b.onclick = () => adminAction(b.dataset.a));
 }
 function adminAction(a) {
