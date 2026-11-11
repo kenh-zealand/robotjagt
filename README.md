@@ -20,7 +20,7 @@ Hele spillet ligger i én fil, `index.html`. Download den og åbn den i en brows
 - 3000 liv og 3 skud, der lader op af sig selv
 - Regenerering: 20 % liv pr. sekund efter 5 sekunder uden skade
 - Buske, som robotterne ikke kan se dig i
-- Robotter: skyderobot, savrobot og flammerobot – de bliver stærkere hver bølge
+- Robotter: skyderobot, savrobot, flammerobot, teleport-robot og usynlig robot – de bliver stærkere hver bølge
 - Miniboss i hver bølge og boss hver 5. bølge, med flere angreb jo længere du kommer
 - Super: et målsøgende missil efter hver 10. træffer
 - Powerups: helbredelse, dobbelt skade, super, hurtig genladning, +500 max liv, +1 skud, +25 % skade og +25 % skudhastighed

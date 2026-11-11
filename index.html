@@ -50,6 +50,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.12', d: '11-11-2026', items: ['Admin: powerups gives direkte til dig og lægges oveni det, du har – du skal ikke samle dem op (ingen lofter, og 2× og genladning forlænges)', 'Ny robot: teleport-robot (fra bølge 3) – blinker, forsvinder og dukker op et nyt sted', 'Ny robot: usynlig robot (fra bølge 4) – kun dens lyseblå skud kan ses, og den automatiske sigte rammer den ikke'] },
   { v: '1.11', d: '11-11-2026', items: ['Admin: vælg hvor mange powerups der skal lægges ved dig (1–50 ad gangen)'] },
   { v: '1.10', d: '11-11-2026', items: ['Admin-panelet åbnes nu med tasten E (før O)', 'Super-missilet er flyttet til tasten Q – højreklik virker stadig'] },
   { v: '1.9', d: '11-11-2026', items: ['Versionsnummer nederst i venstre hjørne', 'Ændringslog – klik på versionsnummeret for at se den'] },
@@ -277,11 +278,14 @@ function spawnWave() {
   const pool = ['gunner', 'gunner', 'saw'];
   if (wave >= 2) pool.push('flame', 'flame');
   if (wave >= 4) pool.push('saw');
+  if (wave >= 3) pool.push('tele', 'tele');
+  if (wave >= 4) pool.push('ghost', 'ghost');
   for (let i = 0; i < n; i++) {
     let x, y, tries = 0;
     do { x = rand(60, WORLD.w - 60); y = rand(60, WORLD.h - 60); tries++; }
     while (tries < 300 && (Math.hypot(x - player.x, y - player.y) < 680 || hitsWall(x, y, 30)));
-    const type = i === 0 && wave === 2 ? 'flame' : pool[Math.floor(Math.random() * pool.length)];
+    const first = { 2: 'flame', 3: 'tele', 4: 'ghost' }[wave];
+    const type = i === 0 && first ? first : pool[Math.floor(Math.random() * pool.length)];
     robots.push({ x, y, type, maxHp: Math.round(CFG.robotHp * hm), speedMul: 1, r: type === 'saw' ? 20 : type === 'flame' ? 24 : 22, sawCd: 0, flaming: false,
       hp: Math.round(CFG.robotHp * hm), state: 'wander', fireCd: rand(0.8, 1.6), angle: rand(0, 6.28),
       target: null, wanderT: 0, lastSeen: null, searchT: 0, lookT: 0, flash: 0, alertT: 0,
@@ -359,7 +363,7 @@ cv.addEventListener('touchcancel', touchEnd, { passive: false });
 function superBtn() { return { x: VW - 80, y: VH - 210, r: 40 }; }
 function nearestVisibleRobot() {
   let best = null, bd = CFG.bulletRange;
-  for (const r of robots) { const d = dist(r, player); if (d < bd && lineOfSight(player, r)) { bd = d; best = r; } }
+  for (const r of robots) { if (r.type === 'ghost') continue; const d = dist(r, player); if (d < bd && lineOfSight(player, r)) { bd = d; best = r; } }
   return best;
 }
 
@@ -376,8 +380,25 @@ function tryShoot(angle) {
 function robotShoot(r) {
   const a = r.angle + rand(-0.08, 0.08), c = Math.cos(a), s = Math.sin(a);
   bullets.push({ x: r.x + c * 30, y: r.y + s * 30, vx: c * CFG.robotBulletSpeed, vy: s * CFG.robotBulletSpeed,
-    life: CFG.robotRange * 1.15 / CFG.robotBulletSpeed, owner: 'r', dmg: CFG.robotDamage });
-  burst(r.x + c * 32, r.y + s * 32, '#ff7a6b', 5, 140, a, 0.6);
+    life: CFG.robotRange * 1.15 / CFG.robotBulletSpeed, owner: 'r', dmg: CFG.robotDamage, ghost: r.type === 'ghost' });
+  if (r.type !== 'ghost') burst(r.x + c * 32, r.y + s * 32, '#ff7a6b', 5, 140, a, 0.6);
+}
+function teleport(r) {
+  const ox = r.x, oy = r.y, ref = r.lastSeen || player;
+  let spot = null;
+  for (let i = 0; i < 80 && !spot; i++) {
+    const a = rand(0, Math.PI * 2), dd = rand(220, 420);
+    const c = { x: ref.x + Math.cos(a) * dd, y: ref.y + Math.sin(a) * dd };
+    if (c.x < 40 || c.y < 40 || c.x > WORLD.w - 40 || c.y > WORLD.h - 40 || hitsWall(c.x, c.y, r.r + 6)) continue;
+    if (i < 60 && !lineOfSight(c, ref)) continue;
+    spot = c;
+  }
+  if (!spot) return;
+  burst(ox, oy, '#c58cff', 18, 240); burst(ox, oy, '#ffffff', 6, 120);
+  r.x = spot.x; r.y = spot.y; r.target = null;
+  r.angle = Math.atan2(player.y - r.y, player.x - r.x);
+  burst(r.x, r.y, '#c58cff', 18, 240); rings.push({ x: r.x, y: r.y, t: 0.25, tele: true });
+  r.fireCd = Math.min(r.fireCd, 0.35);
 }
 function hitRobot(r, b) {
   if (superCharge < CFG.superHits) {
@@ -487,6 +508,18 @@ function spawnPowerup(forced) {
     powerups.push({ x: pt.x, y: pt.y, type, t: rand(0, 6) }); return;
   }
 }
+// admin = true: lægges oveni uden lofter, og tidsbegrænsede powerups forlænges i stedet for at starte forfra
+function applyPowerup(t, admin) {
+  const p = player;
+  if (t === 'heal') p.hp = Math.min(p.maxHp, p.hp + CFG.healAmount);
+  if (t === 'damage') buffs.damage = admin ? buffs.damage + CFG.buffTime : CFG.buffTime;
+  if (t === 'reload') { buffs.reload = admin ? buffs.reload + CFG.buffTime : CFG.buffTime; p.ammo = p.maxAmmo; }
+  if (t === 'permdmg') p.dmgMul += CFG.permDmgBonus;
+  if (t === 'permrate') p.rateMul += CFG.permRateBonus;
+  if (t === 'maxhp') { p.maxHp = admin ? p.maxHp + CFG.maxHpBonus : Math.min(CFG.maxHpCap, p.maxHp + CFG.maxHpBonus); p.hp = Math.min(p.maxHp, p.hp + CFG.maxHpBonus); }
+  if (t === 'ammo') { p.maxAmmo = admin ? p.maxAmmo + 1 : Math.min(CFG.ammoCap, p.maxAmmo + 1); p.ammo = Math.min(p.maxAmmo, p.ammo + 1); }
+  if (t === 'super') { if (superCharge < CFG.superHits) banner('SUPER KLAR!'); superCharge = CFG.superHits; }
+}
 function updatePowerups(dt) {
   powerTimer -= dt;
   if (powerTimer <= 0) { if (powerups.filter(o => o.type !== 'ammo').length < CFG.maxPowerups) spawnPowerup(); powerTimer = rand(6, 10); }
@@ -515,14 +548,7 @@ function updatePowerups(dt) {
     const pu = powerups[i]; pu.t += dt;
     if (Math.hypot(pu.x - player.x, pu.y - player.y) < player.r + 20) {
       const P = POWER[pu.type];
-      if (pu.type === 'heal') player.hp = Math.min(player.maxHp, player.hp + CFG.healAmount);
-      if (pu.type === 'damage') buffs.damage = CFG.buffTime;
-      if (pu.type === 'reload') { buffs.reload = CFG.buffTime; player.ammo = player.maxAmmo; }
-      if (pu.type === 'permdmg') player.dmgMul += CFG.permDmgBonus;
-      if (pu.type === 'permrate') player.rateMul += CFG.permRateBonus;
-      if (pu.type === 'maxhp') { player.maxHp = Math.min(CFG.maxHpCap, player.maxHp + CFG.maxHpBonus); player.hp = Math.min(player.maxHp, player.hp + CFG.maxHpBonus); }
-      if (pu.type === 'ammo') { player.maxAmmo = Math.min(CFG.ammoCap, player.maxAmmo + 1); player.ammo = Math.min(player.maxAmmo, player.ammo + 1); }
-      if (pu.type === 'super') { if (superCharge < CFG.superHits) banner('SUPER KLAR!'); superCharge = CFG.superHits; }
+      applyPowerup(pu.type, false);
       burst(pu.x, pu.y, P.color, 24, 260);
       popups.push({ x: pu.x, y: pu.y - 30, text: P.name, color: P.color, t: 0 });
       powerups.splice(i, 1);
@@ -643,6 +669,11 @@ function updatePlayer(dt) {
 function updateRobots(dt) {
   for (const r of robots) {
     r.flash = Math.max(0, r.flash - dt); r.alertT = Math.max(0, r.alertT - dt);
+    if (r.type === 'tele') {
+      if (r.teleT > 0) { r.teleT -= dt; if (r.teleT <= 0) teleport(r); continue; } // står stille og lader op
+      r.teleCd = (r.teleCd ?? rand(2, 3.5)) - dt;
+      if (r.teleCd <= 0 && (r.state !== 'wander' || Math.random() < 0.4)) { r.teleT = 0.45; r.teleCd = rand(2.5, 4); continue; }
+    }
     const d = dist(r, player);
     const visible = !player.hidden || player.reveal > 0 || d < CFG.closeSight;
     const sees = d < CFG.robotView && visible && lineOfSight(r, player);
@@ -856,7 +887,7 @@ function draw() {
   for (const b of bullets) {
     const a = Math.atan2(b.vy, b.vx);
     ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(a);
-    ctx.fillStyle = b.owner === 'p' ? (b.strong ? '#ff8a3d' : '#ffd86b') : '#ff5a4a';
+    ctx.fillStyle = b.owner === 'p' ? (b.strong ? '#ff8a3d' : '#ffd86b') : b.ghost ? '#9fe8ff' : '#ff5a4a';
     if (b.homing) { ctx.fillStyle = '#e8eaee'; rr(-8, -4, 16, 8, 3); ctx.fill(); ctx.fillStyle = '#e8323a'; ctx.beginPath(); ctx.moveTo(8, -4); ctx.lineTo(13, 0); ctx.lineTo(8, 4); ctx.fill(); }
     else if (b.big) { ctx.fillStyle = '#d94dff'; circle(0, 0, 8); ctx.fill(); ctx.fillStyle = '#f5c9ff'; circle(0, 0, 3.5); }
     else if (b.strong) { rr(-12, -5, 24, 10, 5); } else { rr(-9, -3.5, 18, 7, 3.5); } ctx.fill();
@@ -893,7 +924,8 @@ function draw() {
   for (const g of rings) {
     const f = g.t / 0.45;
     ctx.globalAlpha = 1 - f; ctx.lineWidth = 10 * (1 - f) + 2; ctx.strokeStyle = '#ffd86b';
-    circle(g.x, g.y, (g.small ? 200 : CFG.missileRadius + 20) * Math.min(1, f * 1.6)); ctx.stroke();
+    if (g.tele) ctx.strokeStyle = '#c58cff';
+    circle(g.x, g.y, (g.tele ? 45 : g.small ? 200 : CFG.missileRadius + 20) * Math.min(1, f * 1.6)); ctx.stroke();
     ctx.fillStyle = 'rgba(255,170,60,.25)'; ctx.fill();
   }
   ctx.globalAlpha = 1;
@@ -913,6 +945,7 @@ function draw() {
 
   // Livsbarer over robotter og spiller
   for (const r of robots) {
+    if (r.type === 'ghost') continue;
     if (r.type === 'boss') bar(r.x - 60, r.y - r.r - 18, 120, 9, r.hp / r.maxHp, '#c44dff');
     else if (r.type === 'mini') bar(r.x - 42, r.y - r.r - 16, 84, 8, r.hp / r.maxHp, '#ff9d3b');
     else bar(r.x - 26, r.y - r.r - 16, 52, 6, r.hp / r.maxHp, '#e2483d');
@@ -995,13 +1028,20 @@ function drawMini(r) {
   ctx.restore();
 }
 function drawRobot(r) {
+  if (r.type === 'ghost') {
+    if (r.flash <= 0) return; // usynlig – men blinker svagt når den bliver ramt
+    ctx.save(); ctx.globalAlpha = 0.35; ctx.translate(r.x, r.y); ctx.rotate(r.angle);
+    ctx.strokeStyle = '#bfefff'; ctx.lineWidth = 2; rr(-r.r, -r.r, r.r * 2, r.r * 2, 7); ctx.stroke();
+    ctx.restore(); return;
+  }
   if (r.type === 'boss') return drawBoss(r);
   if (r.type === 'mini') return drawMini(r);
   ctx.save(); ctx.translate(r.x, r.y);
   ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(3, 8, r.r, r.r * 0.7, 0, 0, Math.PI * 2); ctx.fill();
   ctx.rotate(r.angle);
-  const look = { gunner: ['#9aa6b6', '#4d5866', '#7d8999'], saw: ['#c7a07a', '#6b4e36', '#a8825f'], flame: ['#d07a4a', '#7a3a1e', '#b0603a'] }[r.type];
-  if (r.type === 'gunner') { ctx.fillStyle = '#3d444e'; ctx.fillRect(12, -5, 22, 10); }
+  if (r.type === 'tele' && r.teleT > 0) ctx.globalAlpha = 0.3 + 0.5 * Math.abs(Math.sin(performance.now() / 40));
+  const look = { tele: ['#8a6bd8', '#3e2a78', '#b39cff'], gunner: ['#9aa6b6', '#4d5866', '#7d8999'], saw: ['#c7a07a', '#6b4e36', '#a8825f'], flame: ['#d07a4a', '#7a3a1e', '#b0603a'] }[r.type];
+  if (r.type === 'gunner' || r.type === 'tele') { ctx.fillStyle = '#3d444e'; ctx.fillRect(12, -5, 22, 10); }
   if (r.type === 'flame') {
     ctx.fillStyle = '#3d2a20'; ctx.fillRect(12, -6, 18, 12);
     ctx.fillStyle = r.flaming ? '#ffb340' : '#7a4a2a'; ctx.fillRect(28, -7, 6, 14);
@@ -1010,6 +1050,7 @@ function drawRobot(r) {
   ctx.fillStyle = r.flash > 0 ? '#ffffff' : look[0]; rr(-r.r, -r.r, r.r * 2, r.r * 2, 7); ctx.fill();
   ctx.lineWidth = 3; ctx.strokeStyle = look[1]; ctx.stroke();
   ctx.fillStyle = look[2]; ctx.fillRect(-r.r + 5, -r.r + 5, 8, r.r * 2 - 10);
+  if (r.type === 'tele') { ctx.strokeStyle = 'rgba(197,140,255,.8)'; ctx.lineWidth = 2; circle(0, 0, r.r + 5 + 2 * Math.sin(performance.now() / 150)); ctx.stroke(); }
   if (r.type === 'saw') {
     ctx.save(); ctx.translate(r.r + 10, 0); ctx.rotate(performance.now() / 1000 * (r.state === 'chase' ? 30 : 8));
     ctx.beginPath();
@@ -1173,10 +1214,12 @@ function menu() {
       <li>Efter <b>5 sekunder uden skade</b> får du 20 % liv tilbage hvert sekund.</li>
       <li><b>Super:</b> hver 10. træffer giver et målsøgende missil. Tryk <b>Q</b> (eller højreklik). Det jager selv den nærmeste robot, og eksplosionen tager 75 % af livet på alle robotter i et stort område (minibossen mister kun 20 % og bossen 8 %).</li>
       <li>Robotterne bliver stærkere for hver bølge: <b>+15 % liv</b> og <b>+12 % skade</b> pr. bølge.</li>
-      <li>I bølge 1 har robotterne <b>1000 liv</b> – det kræver 4 skud. Der er tre slags:
+      <li>I bølge 1 har robotterne <b>1000 liv</b> – det kræver 4 skud. Der er fem slags:
         <br>• <b>Skyderobot</b> (grå) – skyder på afstand
         <br>• <b>Savrobot</b> (brun) – hurtig, hugger dig tæt på
-        <br>• <b>Flammerobot</b> (orange) – brænder dig på kort afstand</li>
+        <br>• <b>Flammerobot</b> (orange) – brænder dig på kort afstand
+        <br>• <b>Teleport-robot</b> (lilla, fra bølge 3) – blinker og hopper rundt på banen, og skyder lige efter et hop
+        <br>• <b>Usynlig robot</b> (fra bølge 4) – du kan ikke se den, kun dens lyseblå skud. Den automatiske sigte rammer den ikke – sigt selv med musen</li>
       <li><b>Miniboss</b> i hver bølge (blå): 2500 liv, pistoler og en sav foran. Den taber en powerup, når den dør. Den får flere angreb hver bølge: flere pistoler, spurt (bølge 2), flammekaster (bølge 4), ring-skud (bølge 6) og målsøgende raket (bølge 8).</li>
       <li><b>Boss</b> hver 5. bølge: 5000 liv, 2 flammekastere og 3 pistoler. Den er langsom, og dens skud er langsomme – så du kan undvige. Den skyder også i en ring rundt om sig, og fra bølge 10 får den målsøgende raketter og en chokbølge. Bossen har altid flere angreb end minibossen.</li>
       <li><b>Powerups</b> dukker op rundt på banen – gå hen over dem:
@@ -1286,7 +1329,7 @@ function adminControls() {
       <button data-a="mini">Lav en miniboss</button>
     </div>
     <div class="admin-row"><span>Gå til bølge</span><input id="admwave" type="number" min="1" max="99" value="${Math.max(1, wave)}"><button data-a="gowave" style="margin:0">Gå</button></div>
-    <div class="adm-h">Powerups ved dig</div>
+    <div class="adm-h">Giv dig powerups (virker med det samme)</div>
     <div class="admin-row"><span>Antal</span><input id="admcount" type="number" min="1" max="50" value="${adminCount}"></div>
     <div class="admin-grid">
       <button data-a="p-heal">+ Helbredelse</button>
@@ -1327,13 +1370,11 @@ function adminAction(a) {
     const t = a.slice(2);
     const n = clamp(parseInt(document.getElementById('admcount').value, 10) || 1, 1, 50);
     adminCount = n; document.getElementById('admcount').value = n;
-    const a0 = rand(0, Math.PI * 2);
-    for (let i = 0; i < n; i++) {
-      // lægges i ringe rundt om dig, så de ikke ligger oven i hinanden
-      const ringNo = Math.floor(i / 8), ang = a0 + (i % 8) / Math.min(8, n - ringNo * 8) * Math.PI * 2 + ringNo * 0.4, rad = 90 + ringNo * 55;
-      powerups.push({ x: clamp(p.x + Math.cos(ang) * rad, 40, WORLD.w - 40), y: clamp(p.y + Math.sin(ang) * rad, 40, WORLD.h - 40), type: t, t: rand(0, 6) });
-    }
-    adminToast(`${n} × ${POWER[t].name.replace('!', '')} lagt ved dig`);
+    for (let i = 0; i < n; i++) applyPowerup(t, true);
+    const status = { heal: `Liv: ${Math.ceil(p.hp)} / ${p.maxHp}`, damage: `Dobbelt skade: ${buffs.damage.toFixed(0)} s`,
+      reload: `Hurtig genladning: ${buffs.reload.toFixed(0)} s`, super: 'Super er klar', maxhp: `Max liv: ${p.maxHp}`,
+      ammo: `Skud: ${p.maxAmmo}`, permdmg: `Skade: +${Math.round((p.dmgMul - 1) * 100)} %`, permrate: `Skudhastighed: +${Math.round((p.rateMul - 1) * 100)} %` }[t];
+    adminToast(`${n} × ${POWER[t].name.replace('!', '')} givet til dig – ${status}`);
   }
 }
 
