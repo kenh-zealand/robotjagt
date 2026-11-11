@@ -2,7 +2,9 @@
 
 Et top-down skydespil i browseren: overlev så mange bølger af robotter som muligt.
 
-Hele spillet ligger i én fil, `index.html`. Download den og åbn den i en browser, eller slå GitHub Pages til for repoet, så kan spillet spilles direkte fra en adresse.
+Hele spillet ligger i én fil, `index.html`.
+
+Spillet virker både på computer og telefon. På telefonen går det i fuld skærm, når du trykker Start, og det spilles bedst med telefonen vendt på langs. Kan spilles på https://keha.dk/robotspil Download den og åbn den i en browser, eller slå GitHub Pages til for repoet, så kan spillet spilles direkte fra en adresse.
 
 ## Sådan spiller du
 

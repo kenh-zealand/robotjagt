@@ -2,11 +2,16 @@
 <html lang="da">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#0d1014">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Robotjagt">
 <title>Robotjagt</title>
 <!-- Robotjagt © 2026 Kenneth Hansen -->
 <style>
-  html,body{margin:0;height:100%;background:#0d1014;overflow:hidden;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#eef2f7;touch-action:none;user-select:none;-webkit-user-select:none}
+  html,body{margin:0;height:100%;overscroll-behavior:none;-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none;background:#0d1014;overflow:hidden;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#eef2f7;touch-action:none;user-select:none;-webkit-user-select:none}
   canvas{display:block;width:100vw;height:100vh;cursor:crosshair}
   #overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(8,10,14,.74);z-index:5}
   .panel{background:#1b2129;border:1px solid #33404f;border-radius:16px;padding:26px 30px;max-width:480px;width:calc(100% - 48px);max-height:calc(100% - 48px);overflow:auto;text-align:center;box-shadow:0 24px 70px rgba(0,0,0,.55)}
@@ -24,6 +29,12 @@
   .hidden{display:none!important}
   #ver{position:fixed;left:10px;bottom:10px;z-index:4;margin:0;padding:5px 10px;font-size:12px;font-weight:700;background:rgba(13,16,20,.72);color:#c9d3df;border:1px solid #33404f;border-radius:8px}
   #ver:hover{color:#fff}
+  .menu-btns{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:6px 0 4px}
+  .menu-btns button{margin:0}
+  details{text-align:left;margin-top:12px;border-top:1px solid #2c3644;padding-top:8px}
+  summary{cursor:pointer;font-weight:700;color:#dfe7f1;padding:6px 0}
+  .tip{font-size:13px;color:#93a0b0;margin:8px 0 0}
+  @media (max-width:600px),(max-height:500px){.panel{padding:18px 18px}.panel h1{font-size:26px}.panel ul{font-size:14px}}
   .log{text-align:left;max-height:55vh;overflow:auto;margin:10px 0;padding-right:6px}
   .log h3{margin:14px 0 2px;font-size:16px}
   .log h3 span{font-size:12px;color:#93a0b0;font-weight:600;margin-left:6px}
@@ -50,6 +61,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.13', d: '11-11-2026', items: ['Bedre på telefon: fuld skærm når du starter, og HUD\'en skaleres ned på små skærme', 'Startskærmen viser telefon-styring på telefoner og tastatur-styring på computer', 'Spillet holder pause, hvis du skifter app', 'Spillet kan spilles på keha.dk/robotspil'] },
   { v: '1.12', d: '11-11-2026', items: ['Admin: powerups gives direkte til dig og lægges oveni det, du har – du skal ikke samle dem op (ingen lofter, og 2× og genladning forlænges)', 'Ny robot: teleport-robot (fra bølge 3) – blinker, forsvinder og dukker op et nyt sted', 'Ny robot: usynlig robot (fra bølge 4) – kun dens lyseblå skud kan ses, og den automatiske sigte rammer den ikke'] },
   { v: '1.11', d: '11-11-2026', items: ['Admin: vælg hvor mange powerups der skal lægges ved dig (1–50 ad gangen)'] },
   { v: '1.10', d: '11-11-2026', items: ['Admin-panelet åbnes nu med tasten E (før O)', 'Super-missilet er flyttet til tasten Q – højreklik virker stadig'] },
@@ -304,7 +316,8 @@ function spawnWave() {
 const keys = new Set();
 const mouse = { x: 0, y: 0, active: false, down: false };
 const touch = { move: null, aim: null };
-let isTouch = false;
+const TOUCH = (window.matchMedia && matchMedia('(pointer: coarse)').matches) || 'ontouchstart' in window;
+let isTouch = TOUCH;
 
 addEventListener('keydown', e => {
   if (e.target && e.target.tagName === 'INPUT') return;
@@ -317,6 +330,9 @@ addEventListener('keydown', e => {
 });
 addEventListener('keyup', e => keys.delete(e.code));
 addEventListener('blur', () => { keys.clear(); mouse.down = false; if (state === 'play') pause(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'play') pause(); });
+document.addEventListener('gesturestart', e => e.preventDefault()); // ingen zoom med to fingre på iPhone
+addEventListener('orientationchange', () => setTimeout(resize, 200));
 
 cv.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true; });
 cv.addEventListener('mousedown', e => {
@@ -330,7 +346,7 @@ cv.addEventListener('touchstart', e => {
   e.preventDefault(); isTouch = true; mouse.active = false;
   for (const t of e.changedTouches) {
     const o = { id: t.identifier, sx: t.clientX, sy: t.clientY, x: t.clientX, y: t.clientY };
-    if (state === 'play' && Math.hypot(t.clientX - (VW - 36), t.clientY - 170) < 28) { pause(); continue; }
+    if (state === 'play' && Math.hypot(t.clientX - pauseBtn().x, t.clientY - pauseBtn().y) < 30) { pause(); continue; }
     const sb = superBtn();
     if (Math.hypot(t.clientX - sb.x, t.clientY - sb.y) < sb.r + 10) { fireSuper(); continue; }
     if (t.clientX < VW / 2 && !touch.move) touch.move = o;
@@ -360,7 +376,8 @@ function touchEnd(e) {
 cv.addEventListener('touchend', touchEnd, { passive: false });
 cv.addEventListener('touchcancel', touchEnd, { passive: false });
 
-function superBtn() { return { x: VW - 80, y: VH - 210, r: 40 }; }
+function pauseBtn() { return VW >= 640 ? { x: VW / 2, y: 28 } : { x: VW - 34, y: 112 }; }
+function superBtn() { return { x: VW - 80, y: Math.max(VH - 210, VH * 0.45), r: 40 }; }
 function nearestVisibleRobot() {
   let best = null, bd = CFG.bulletRange;
   for (const r of robots) { if (r.type === 'ghost') continue; const d = dist(r, player); if (d < bd && lineOfSight(player, r)) { bd = d; best = r; } }
@@ -1079,7 +1096,13 @@ function drawPlayer() {
 }
 
 function drawHUD() {
-  const p = player, x = 18, y = 18, w = Math.min(300, VW - 170);
+  // På små skærme skaleres hele HUD'en ned, så den ikke fylder hele telefonen
+  const hs = clamp(Math.min(VW / 760, VH / 520), 0.62, 1), realW = VW, realH = VH;
+  ctx.save(); ctx.scale(hs, hs); VW = VW / hs; VH = VH / hs;
+  try { drawHUDInner(); } finally { ctx.restore(); VW = realW; VH = realH; }
+}
+function drawHUDInner() {
+  const p = player, x = 18, y = 18, w = Math.min(300, VW - 190);
   ctx.textBaseline = 'middle';
   ctx.fillStyle = 'rgba(13,16,20,.75)'; rr(x - 10, y - 10, w + 20, 134, 12); ctx.fill();
 
@@ -1178,8 +1201,9 @@ function drawHUD() {
 }
 function drawJoysticks() {
   if (!isTouch || state !== 'play') return;
-  circle(VW - 36, 170, 20); ctx.fillStyle = 'rgba(13,16,20,.75)'; ctx.fill();
-  ctx.fillStyle = '#dfe7f1'; ctx.fillRect(VW - 43, 161, 5, 18); ctx.fillRect(VW - 34, 161, 5, 18);
+  const pb = pauseBtn();
+  circle(pb.x, pb.y, 20); ctx.fillStyle = 'rgba(13,16,20,.75)'; ctx.fill();
+  ctx.fillStyle = '#dfe7f1'; ctx.fillRect(pb.x - 7, pb.y - 9, 5, 18); ctx.fillRect(pb.x + 2, pb.y - 9, 5, 18);
   const sb = superBtn(), ready = superCharge >= CFG.superHits;
   circle(sb.x, sb.y, sb.r);
   ctx.fillStyle = ready ? `rgba(255,216,74,${0.75 + 0.2 * Math.sin(time * 8)})` : 'rgba(40,46,56,.7)'; ctx.fill();
@@ -1202,24 +1226,45 @@ function showPanel(html, btnText, onClick) {
   overlay.classList.remove('hidden');
   document.getElementById('go').onclick = onClick;
 }
+function canFullscreen() { const d = document.documentElement; return !!(d.requestFullscreen || d.webkitRequestFullscreen); }
+function goFullscreen() {
+  const d = document.documentElement;
+  try {
+    if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+      const r = d.requestFullscreen ? d.requestFullscreen({ navigationUI: 'hide' }) : d.webkitRequestFullscreen && d.webkitRequestFullscreen();
+      if (r && r.then) r.then(() => { try { screen.orientation.lock('landscape').catch(() => {}); } catch (e) {} }).catch(() => {});
+    }
+  } catch (e) {}
+}
 function menu() {
   state = 'menu';
-  showPanel(`<h1>Robotjagt</h1><p>Overlev så mange bølger af robotter som muligt. <span style="color:#93a0b0">· v${VERSION}</span></p>
-    <ul>
+  const controls = TOUCH ? `
+      <li><b>Bevæg dig:</b> sæt venstre tommel på skærmen og træk</li>
+      <li><b>Skyd:</b> tryk kort med højre tommel – sigter automatisk på den nærmeste robot</li>
+      <li><b>Sigt selv:</b> træk med højre tommel og slip for at skyde</li>
+      <li><b>Super:</b> den gule SUPER-knap · <b>Pause og admin:</b> pauseknappen ⏸ øverst</li>` : `
       <li><b>Bevæg dig:</b> W = op, A = venstre, S = ned, D = højre (piletaster virker også)</li>
       <li><b>Skyd:</b> mellemrum – sigter automatisk på den nærmeste robot, du kan se</li>
       <li><b>Sigt selv:</b> brug musen og venstreklik, hvis du hellere vil det</li>
-      <li><b>Mobil:</b> venstre tommel styrer, højre tommel sigter – slip for at skyde. Et kort tryk sigter automatisk.</li>
+      <li><b>Super:</b> Q eller højreklik · <b>Pause:</b> P eller Esc · <b>Admin:</b> E</li>`;
+  const portrait = TOUCH && VH > VW;
+  panel.innerHTML = `<h1>Robotjagt</h1><p>Overlev så mange bølger af robotter som muligt. <span style="color:#93a0b0">· v${VERSION}</span></p>
+    <div class="menu-btns"><button id="go">Start spil</button><button class="sec" id="lognow">Ændringslog</button></div>
+    ${portrait ? '<p class="tip">📱 Spillet er bedst, når du vender telefonen på langs.</p>' : ''}
+    ${TOUCH && !canFullscreen() ? '<p class="tip">Tip: Del → "Føj til hjemmeskærm" giver fuld skærm.</p>' : ''}
+    <details ${TOUCH ? '' : 'open'}><summary>Sådan spiller du</summary>
+    <ul>
+${controls}
       <li>Du har <b>3000 liv</b> og <b>3 skud</b>. Hvert skud lader selv op igen på 0,5 sekund – men først 0,25 sekund efter, at du har skudt.</li>
       <li>Efter <b>5 sekunder uden skade</b> får du 20 % liv tilbage hvert sekund.</li>
-      <li><b>Super:</b> hver 10. træffer giver et målsøgende missil. Tryk <b>Q</b> (eller højreklik). Det jager selv den nærmeste robot, og eksplosionen tager 75 % af livet på alle robotter i et stort område (minibossen mister kun 20 % og bossen 8 %).</li>
+      <li><b>Super:</b> hver 10. træffer giver et målsøgende missil. ${TOUCH ? 'Tryk på den gule <b>SUPER</b>-knap.' : 'Tryk <b>Q</b> (eller højreklik).'} Det jager selv den nærmeste robot, og eksplosionen tager 75 % af livet på alle robotter i et stort område (minibossen mister kun 20 % og bossen 8 %).</li>
       <li>Robotterne bliver stærkere for hver bølge: <b>+15 % liv</b> og <b>+12 % skade</b> pr. bølge.</li>
       <li>I bølge 1 har robotterne <b>1000 liv</b> – det kræver 4 skud. Der er fem slags:
         <br>• <b>Skyderobot</b> (grå) – skyder på afstand
         <br>• <b>Savrobot</b> (brun) – hurtig, hugger dig tæt på
         <br>• <b>Flammerobot</b> (orange) – brænder dig på kort afstand
         <br>• <b>Teleport-robot</b> (lilla, fra bølge 3) – blinker og hopper rundt på banen, og skyder lige efter et hop
-        <br>• <b>Usynlig robot</b> (fra bølge 4) – du kan ikke se den, kun dens lyseblå skud. Den automatiske sigte rammer den ikke – sigt selv med musen</li>
+        <br>• <b>Usynlig robot</b> (fra bølge 4) – du kan ikke se den, kun dens lyseblå skud. Den automatiske sigte rammer den ikke – sigt selv ${TOUCH ? 'ved at trække med højre tommel' : 'med musen'}</li>
       <li><b>Miniboss</b> i hver bølge (blå): 2500 liv, pistoler og en sav foran. Den taber en powerup, når den dør. Den får flere angreb hver bølge: flere pistoler, spurt (bølge 2), flammekaster (bølge 4), ring-skud (bølge 6) og målsøgende raket (bølge 8).</li>
       <li><b>Boss</b> hver 5. bølge: 5000 liv, 2 flammekastere og 3 pistoler. Den er langsom, og dens skud er langsomme – så du kan undvige. Den skyder også i en ring rundt om sig, og fra bølge 10 får den målsøgende raketter og en chokbølge. Bossen har altid flere angreb end minibossen.</li>
       <li><b>Powerups</b> dukker op rundt på banen – gå hen over dem:
@@ -1232,9 +1277,11 @@ function menu() {
         <br>• <b style="color:#2fe0d0">» Turkis lyn</b> – <b>+25 % skudhastighed for altid</b> (hurtigere genladning, kan samles flere gange)
         <br>• <b style="color:#3ee06a">▲ Grøn krystal</b> – giver dig <b>1 skud ekstra</b> for resten af spillet (op til 8)</li>
       <li><b>Buske</b> skjuler dig. Men skyder du fra en busk, kan robotterne se dig et kort øjeblik – og kommer de helt tæt på, opdager de dig.</li>
-    </ul>`, 'Start spil', start);
-  const lb = document.createElement('button'); lb.className = 'sec'; lb.textContent = 'Ændringslog'; lb.style.marginLeft = '8px';
-  lb.onclick = openLog; panel.appendChild(lb);
+    </ul>
+    </details>`;
+  overlay.classList.remove('hidden');
+  document.getElementById('go').onclick = () => { if (TOUCH) goFullscreen(); start(); };
+  document.getElementById('lognow').onclick = openLog;
 }
 function start() { reset(); state = 'play'; overlay.classList.add('hidden'); last = performance.now(); }
 function pause() {
@@ -1260,7 +1307,7 @@ function gameOverPanel() {
         <div class="stat"><div class="n">${wave}</div><div class="l">Bølge</div></div>
         <div class="stat"><div class="n">${kills}</div><div class="l">Nedlagt</div></div>
         <div class="stat"><div class="n">${best}</div><div class="l">Rekord</div></div>
-      </div>${rekord && kills > 0 ? '<p><b>Ny rekord!</b></p>' : ''}`, 'Spil igen', start);
+      </div>${rekord && kills > 0 ? '<p><b>Ny rekord!</b></p>' : ''}`, 'Spil igen', () => { if (TOUCH) goFullscreen(); start(); });
   }
 }
 
@@ -1385,6 +1432,7 @@ function loop(now) {
   if (state === 'play') update(dt);
   if (state !== 'pause' && state !== 'admin' && state !== 'log') updateParticles(dt);
   draw();
+  verBtn.classList.toggle('hidden', state === 'play' && isTouch);
   requestAnimationFrame(loop);
 }
 reset(); menu();
