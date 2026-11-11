@@ -61,6 +61,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.16', d: '11-11-2026', items: ['Sjældne våben at samle op: shotgun (10 hagl, langsom), minigun (mega hurtig), sniper (uendelig rækkevidde, 4× skade, langsom) og rifle (hurtigere og lidt mere skade)', 'Et våben dukker op cirka hvert 45. sekund, og bossen taber et, når den dør', 'Dit våben står i HUD\'en, og det ses i hånden på din figur', 'Admin: vælg våben eller læg et våben på banen'] },
   { v: '1.15', d: '11-11-2026', items: ['Aimbot: du sigter nu selv – skuddene søger bare mod robotterne og har uendelig rækkevidde'] },
   { v: '1.14', d: '11-11-2026', items: ['Byg vægge: 1 byggemateriale hvert 3. sekund, 1 materiale = 1 væg. Højreklik for at bygge (BYG-knap på telefon)', 'Du kan gå og skyde igennem dine egne vægge – robotterne kan ikke', 'Robotterne finder vej uden om mure og vægge, går gennem åbninger og skyder kun vægge i stykker, hvis der ikke er en anden vej', 'Robotterne hører dig og kommer efter dig – undtagen når du gemmer dig i en busk', 'Admin: aimbot (uendelig rækkevidde og målsøgende skud) og +20 byggemateriale', 'Genstart-knap i pause-menuen', 'Super-missilet er nu kun på Q (højreklik bruges til at bygge)'] },
   { v: '1.13', d: '11-11-2026', items: ['Bedre på telefon: fuld skærm når du starter, og HUD\'en skaleres ned på små skærme', 'Startskærmen viser telefon-styring på telefoner og tastatur-styring på computer', 'Spillet holder pause, hvis du skifter app', 'Spillet kan spilles på keha.dk/robotspil'] },
@@ -137,6 +138,8 @@ const CFG = {
   buildRange: 340,      // hvor langt væk man kan bygge
   wallPathCost: 30,     // hvor meget robotter hellere vil gå udenom end skyde sig igennem
   hearRange: 650,       // robotter hører dig inden for denne afstand (ikke når du er i en busk)
+  weaponFirst: 30,      // første våben dukker op efter 30 sek.
+  weaponEvery: [40, 55],// derefter et sjældent våben hvert 40–55 sek.
   maxPowerups: 4,       // højst så mange powerups på banen ad gangen
   healAmount: 1200,     // helbredelse: +1200 liv
   buffTime: 10,         // skade- og genladnings-powerup varer 10 sek.
@@ -155,6 +158,16 @@ const POWER = {
   ammo:   { color: '#3ee06a', dark: '#0f5a24', icon: '▲',  name: '+1 skud ekstra!' }
 };
 const WORLD = { w: 2200, h: 1500 };
+
+// ---------- Våben ----------
+// dmg = gange normal skade, gap = tid mellem skud, reload = gange normal genladetid, cost = skud der bruges pr. tryk
+const WEAPONS = {
+  pistol:  { name: 'Pistol',  color: '#c9d3df', dmg: 1,    gap: 0.18, reload: 1,   cost: 1,    pellets: 1,  spread: 0,    range: 1,    speed: 950,  superGain: 1 },
+  shotgun: { name: 'Shotgun', color: '#ff9a4a', dmg: 0.45, gap: 0.7,  reload: 2,   cost: 1,    pellets: 10, spread: 0.32, range: 0.6,  speed: 850,  superGain: 0.2 },
+  minigun: { name: 'Minigun', color: '#ffd84a', dmg: 0.35, gap: 0.05, reload: 0.8, cost: 0.12, pellets: 1,  spread: 0.09, range: 0.9,  speed: 1050, superGain: 0.3, auto: true },
+  sniper:  { name: 'Sniper',  color: '#6fd3ff', dmg: 4,    gap: 0.9,  reload: 2.4, cost: 1,    pellets: 1,  spread: 0,    range: 99,   speed: 1900, superGain: 2 },
+  rifle:   { name: 'Rifle',   color: '#9be36f', dmg: 1.3,  gap: 0.11, reload: 0.7, cost: 1,    pellets: 1,  spread: 0.02, range: 1.25, speed: 1100, superGain: 1 }
+};
 
 // ---------- Hjælpere ----------
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
@@ -210,6 +223,7 @@ for (const b of bushes) {
 }
 
 let builtWalls = []; // vægge spilleren har bygget
+let weaponDrops = [], weaponTimer = 0;
 function hitsWall(x, y, r) {
   for (const w of walls.concat(builtWalls)) {
     const cx = clamp(x, w.x, w.x + w.w), cy = clamp(y, w.y, w.y + w.h);
@@ -407,10 +421,11 @@ const cam = { x: 0, y: 0 };
 let best = 0; try { best = +localStorage.getItem('robotjagt_best') || 0; } catch (e) {}
 
 function reset() {
-  player = { x: 1100, y: 950, r: 18, hp: CFG.playerMaxHp, maxHp: CFG.playerMaxHp, dmgMul: 1, rateMul: 1, ammo: CFG.maxAmmo, maxAmmo: CFG.maxAmmo, lastHit: -99, fireCd: 0, angle: -Math.PI / 2, flash: 0, hidden: null, reveal: 0 };
+  player = { x: 1100, y: 950, r: 18, hp: CFG.playerMaxHp, maxHp: CFG.playerMaxHp, dmgMul: 1, rateMul: 1, ammo: CFG.maxAmmo, maxAmmo: CFG.maxAmmo, weapon: 'pistol', lastHit: -99, fireCd: 0, angle: -Math.PI / 2, flash: 0, hidden: null, reveal: 0 };
   robots = []; bullets = []; particles = []; missiles = []; rings = []; superCharge = 0;
   powerups = []; popups = []; powerTimer = 3; ammoTimer = 12; maxHpTimer = 20; permDmgTimer = 22; permRateTimer = 36; buffs = { damage: 0, reload: 0 };
   wave = 0; kills = 0; time = 0; waveTimer = 1.2; shake = 0;
+  weaponDrops = []; weaponTimer = CFG.weaponFirst;
   builtWalls = []; builtAt.fill(null); materials = CFG.startMaterials; matTimer = 0; buildMode = false; flowDirty = true; flowTimer = 0;
 }
 function banner(t) { bannerText = t; bannerT = 2.2; }
@@ -544,12 +559,19 @@ function nearestVisibleRobot() {
 // ---------- Skud og skade ----------
 function tryShoot(angle) {
   const p = player;
-  if (p.ammo < 1 || p.fireCd > 0) return;
-  p.ammo -= 1; p.fireCd = CFG.fireGap / p.rateMul; p.reveal = 0.9; p.reloadPause = CFG.reloadPause / p.rateMul;
+  const W = WEAPONS[p.weapon];
+  if (p.ammo < W.cost - 1e-6 || p.fireCd > 0) return;
+  p.ammo = Math.max(0, p.ammo - W.cost); p.fireCd = W.gap / p.rateMul; p.reveal = 0.9; p.reloadPause = CFG.reloadPause / p.rateMul;
+  const dmg = CFG.shotDamage * W.dmg * p.dmgMul * (buffs.damage > 0 ? 2 : 1);
+  for (let k = 0; k < W.pellets; k++) {
+    const a = angle + (W.pellets > 1 ? (k / (W.pellets - 1) - 0.5) * 2 * W.spread + rand(-0.03, 0.03) : rand(-W.spread, W.spread));
+    const c = Math.cos(a), s = Math.sin(a);
+    bullets.push({ x: p.x + c * 28, y: p.y + s * 28, vx: c * W.speed, vy: s * W.speed, seek: cheats.aimbot,
+      life: cheats.aimbot ? 8 : CFG.bulletRange * W.range / W.speed, owner: 'p', dmg, strong: buffs.damage > 0, wtype: p.weapon, superGain: W.superGain });
+  }
   const c = Math.cos(angle), s = Math.sin(angle);
-  bullets.push({ x: p.x + c * 28, y: p.y + s * 28, vx: c * CFG.bulletSpeed, vy: s * CFG.bulletSpeed, seek: cheats.aimbot,
-    life: cheats.aimbot ? 8 : CFG.bulletRange / CFG.bulletSpeed, owner: 'p', dmg: CFG.shotDamage * player.dmgMul * (buffs.damage > 0 ? 2 : 1), strong: buffs.damage > 0 });
-  burst(p.x + c * 30, p.y + s * 30, '#ffd27a', 6, 160, angle, 0.6);
+  burst(p.x + c * 34, p.y + s * 34, p.weapon === 'sniper' ? '#bfefff' : '#ffd27a', p.weapon === 'shotgun' ? 12 : 6, 160, angle, 0.6);
+  if (p.weapon === 'sniper' || p.weapon === 'shotgun') shake = Math.max(shake, 3);
 }
 function robotShoot(r) {
   const a = r.angle + rand(-0.08, 0.08), c = Math.cos(a), s = Math.sin(a);
@@ -576,8 +598,8 @@ function teleport(r) {
 }
 function hitRobot(r, b) {
   if (superCharge < CFG.superHits) {
-    superCharge++;
-    if (superCharge === CFG.superHits) { banner('SUPER KLAR!'); burst(player.x, player.y, '#ffd84a', 20, 200); }
+    superCharge = Math.min(CFG.superHits, superCharge + (b.superGain || 1));
+    if (superCharge >= CFG.superHits) { banner('SUPER KLAR!'); burst(player.x, player.y, '#ffd84a', 20, 200); }
   }
   damageRobot(r, b.dmg, b.x, b.y);
 }
@@ -592,6 +614,7 @@ function damageRobot(r, dmg, x, y) {
       shake = 22; banner('BOSS BESEJRET!'); rings.push({ x: r.x, y: r.y, t: 0 });
       for (let k = 0; k < 4; k++) burst(r.x + rand(-40, 40), r.y + rand(-40, 40), ['#ff9d3b', '#ffdf6b', '#8b96a5', '#ff5a2a'][k], 35, 420);
       powerups.push({ x: r.x, y: r.y, type: 'heal', t: 0 }); powerups.push({ x: r.x + 60, y: r.y, type: 'ammo', t: 0 });
+      spawnWeaponDrop(null, r.x - 60, r.y); // bossen taber et sjældent våben
     }
     if (r.type === 'mini') {
       shake = 14; burst(r.x, r.y, '#4ab8ff', 25, 300);
@@ -731,6 +754,46 @@ function updatePowerups(dt) {
   for (let i = popups.length - 1; i >= 0; i--) { popups[i].t += dt; popups[i].y -= 40 * dt; if (popups[i].t > 1.4) popups.splice(i, 1); }
 }
 
+// ---------- Våben man kan samle op (sjældne) ----------
+function spawnWeaponDrop(type, x, y) {
+  if (!type) {
+    const opts = ['shotgun', 'minigun', 'sniper', 'rifle'].filter(t => t !== player.weapon);
+    type = opts[Math.floor(Math.random() * opts.length)];
+  }
+  if (x === undefined) {
+    for (let i = 0; i < 200; i++) {
+      const pt = randomFreePoint();
+      if (inBush(pt) || Math.hypot(pt.x - player.x, pt.y - player.y) < 300) continue;
+      x = pt.x; y = pt.y; break;
+    }
+    if (x === undefined) return;
+  }
+  weaponDrops.push({ type, x, y, t: 0 });
+  popups.push({ x: player.x, y: player.y - 70, text: 'Et sjældent våben er dukket op: ' + WEAPONS[type].name + '!', color: WEAPONS[type].color, t: -0.4 });
+}
+function updateWeaponDrops(dt) {
+  weaponTimer -= dt;
+  if (weaponTimer <= 0) { if (!weaponDrops.length) spawnWeaponDrop(); weaponTimer = rand(CFG.weaponEvery[0], CFG.weaponEvery[1]); }
+  for (let i = weaponDrops.length - 1; i >= 0; i--) {
+    const w = weaponDrops[i]; w.t += dt;
+    if (Math.hypot(w.x - player.x, w.y - player.y) < player.r + 24) {
+      player.weapon = w.type; player.ammo = player.maxAmmo; player.fireCd = 0;
+      burst(w.x, w.y, WEAPONS[w.type].color, 30, 300); banner(WEAPONS[w.type].name + '!');
+      weaponDrops.splice(i, 1);
+    }
+  }
+}
+function drawGun(type, scale) {
+  // tegnet med pibe mod højre, centreret omkring (0,0) i spillerens hånd
+  ctx.save(); ctx.scale(scale, scale);
+  if (type === 'shotgun') { ctx.fillStyle = '#6b4a2a'; ctx.fillRect(2, -5, 10, 10); ctx.fillStyle = '#2a2f38'; ctx.fillRect(10, -6, 24, 5); ctx.fillRect(10, 1, 24, 5); }
+  else if (type === 'minigun') { ctx.fillStyle = '#3a3f48'; ctx.fillRect(4, -9, 18, 18); ctx.fillStyle = '#2a2f38'; for (const oy of [-7, -2, 3]) ctx.fillRect(20, oy, 18, 4); ctx.fillStyle = '#ffd84a'; ctx.fillRect(8, -3, 6, 6); }
+  else if (type === 'sniper') { ctx.fillStyle = '#2a2f38'; ctx.fillRect(4, -3, 46, 6); ctx.fillStyle = '#6fd3ff'; ctx.fillRect(14, -9, 14, 5); ctx.fillStyle = '#4a5260'; ctx.fillRect(46, -4, 6, 8); }
+  else if (type === 'rifle') { ctx.fillStyle = '#2a2f38'; ctx.fillRect(6, -4, 34, 8); ctx.fillStyle = '#9be36f'; ctx.fillRect(16, 4, 7, 8); ctx.fillStyle = '#4a5260'; ctx.fillRect(36, -5, 6, 10); }
+  else { ctx.fillStyle = '#2a2f38'; ctx.fillRect(8, -5, 26, 10); ctx.fillStyle = '#4a5260'; ctx.fillRect(26, -6, 8, 12); }
+  ctx.restore();
+}
+
 // ---------- Super: målsøgende missil ----------
 function nearestRobot(x, y) {
   let best = null, bd = Infinity;
@@ -800,7 +863,7 @@ function update(dt) {
   for (const w of builtWalls) w.flash = Math.max(0, w.flash - dt);
   flowTimer -= dt;
   if (robots.length && (flowDirty || flowTimer <= 0)) { computeFlow(); flowDirty = false; flowTimer = 0.25; }
-  updatePlayer(dt); updatePowerups(dt); updateRobots(dt); updateBullets(dt); updateMissiles(dt);
+  updatePlayer(dt); updatePowerups(dt); updateWeaponDrops(dt); updateRobots(dt); updateBullets(dt); updateMissiles(dt);
   if (bannerT > 0) bannerT -= dt;
 }
 
@@ -831,11 +894,12 @@ function updatePlayer(dt) {
   }
 
   p.fireCd = Math.max(0, p.fireCd - dt);
-  const rt = (buffs.reload > 0 ? CFG.fastReload : CFG.reloadTime) / p.rateMul;
+  const rt = (buffs.reload > 0 ? CFG.fastReload : CFG.reloadTime) / p.rateMul * WEAPONS[p.weapon].reload;
   p.reloadPause = Math.max(0, (p.reloadPause || 0) - dt);
   if (cheats.ammo) p.ammo = p.maxAmmo;
   if (p.ammo < p.maxAmmo && p.reloadPause <= 0) p.ammo = Math.min(p.maxAmmo, p.ammo + dt / rt);
   if (mouse.down || keys.has('Space')) tryShoot(p.angle);
+  if (touch.aim && WEAPONS[p.weapon].auto && Math.hypot(touch.aim.x - touch.aim.sx, touch.aim.y - touch.aim.sy) > 18) tryShoot(p.angle); // minigun: hold tommelen for at skyde
   if (mouse.rdown) tryBuild(cam.x + mouse.x / zoom, cam.y + mouse.y / zoom, true); // hold højreklik og træk for at bygge flere
 
   if (time - p.lastHit >= CFG.regenDelay && p.hp < player.maxHp)
@@ -1091,6 +1155,15 @@ function draw() {
     }
   }
 
+  for (const wd of weaponDrops) {
+    const W = WEAPONS[wd.type], bob = Math.sin(wd.t * 3) * 4, pulse = 0.5 + 0.5 * Math.sin(wd.t * 5);
+    ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(wd.x, wd.y + 20, 22, 7, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 0.25 + 0.25 * pulse; circle(wd.x, wd.y + bob, 34); ctx.fillStyle = '#ffd84a'; ctx.fill(); ctx.globalAlpha = 1;
+    circle(wd.x, wd.y + bob, 24); ctx.fillStyle = '#1c2129'; ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = W.color; ctx.stroke();
+    ctx.save(); ctx.translate(wd.x - 20, wd.y + bob); drawGun(wd.type, 0.8); ctx.restore();
+    ctx.font = '800 13px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.strokeText(W.name, wd.x, wd.y + bob + 40); ctx.fillStyle = W.color; ctx.fillText(W.name, wd.x, wd.y + bob + 40);
+  }
   for (const pu of powerups) {
     const P = POWER[pu.type], bob = Math.sin(pu.t * 3) * 4;
     ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(pu.x, pu.y + 16, 16, 6, 0, 0, Math.PI * 2); ctx.fill();
@@ -1112,6 +1185,8 @@ function draw() {
     ctx.fillStyle = b.owner === 'p' ? (b.strong ? '#ff8a3d' : '#ffd86b') : b.ghost ? '#9fe8ff' : '#ff5a4a';
     if (b.homing) { ctx.fillStyle = '#e8eaee'; rr(-8, -4, 16, 8, 3); ctx.fill(); ctx.fillStyle = '#e8323a'; ctx.beginPath(); ctx.moveTo(8, -4); ctx.lineTo(13, 0); ctx.lineTo(8, 4); ctx.fill(); }
     else if (b.big) { ctx.fillStyle = '#d94dff'; circle(0, 0, 8); ctx.fill(); ctx.fillStyle = '#f5c9ff'; circle(0, 0, 3.5); }
+    else if (b.wtype === 'sniper') { ctx.fillStyle = b.strong ? '#ff8a3d' : '#bfefff'; rr(-22, -2.5, 44, 5, 2.5); }
+    else if (b.wtype === 'shotgun' || b.wtype === 'minigun') { circle(0, 0, b.strong ? 4.5 : 3.5); }
     else if (b.strong) { rr(-12, -5, 24, 10, 5); } else { rr(-9, -3.5, 18, 7, 3.5); } ctx.fill();
     ctx.restore();
   }
@@ -1292,8 +1367,7 @@ function drawPlayer() {
   ctx.globalAlpha = p.hidden ? (p.reveal > 0 ? 0.9 : 0.6) : 1;
   ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(3, 7, p.r, p.r * 0.7, 0, 0, Math.PI * 2); ctx.fill();
   ctx.rotate(p.angle);
-  ctx.fillStyle = '#2a2f38'; ctx.fillRect(8, -5, 26, 10);
-  ctx.fillStyle = '#4a5260'; ctx.fillRect(26, -6, 8, 12);
+  drawGun(p.weapon, 1);
   circle(0, 0, p.r); ctx.fillStyle = p.flash > 0 ? '#ff7b7b' : '#3d8bff'; ctx.fill();
   ctx.lineWidth = 3; ctx.strokeStyle = '#1d4f99'; ctx.stroke();
   circle(-4, -4, p.r * 0.4); ctx.fillStyle = 'rgba(255,255,255,.25)'; ctx.fill();
@@ -1330,10 +1404,10 @@ function drawHUDInner() {
   }
 
   // Skud
-  ctx.fillStyle = '#c9d3df'; ctx.font = '700 12.5px system-ui,sans-serif'; ctx.fillText('SKUD', x, y + 68);
-  const gap = p.maxAmmo > 5 ? 4 : 8, sw = (w - 52 - (p.maxAmmo - 1) * gap) / p.maxAmmo;
+  ctx.fillStyle = WEAPONS[p.weapon].color; ctx.font = '800 11.5px system-ui,sans-serif'; ctx.fillText(WEAPONS[p.weapon].name.toUpperCase(), x, y + 68);
+  const gap = p.maxAmmo > 5 ? 4 : 8, sw = (w - 66 - (p.maxAmmo - 1) * gap) / p.maxAmmo;
   for (let i = 0; i < p.maxAmmo; i++) {
-    const fx = x + 52 + i * (sw + gap), af = clamp(p.ammo - i, 0, 1);
+    const fx = x + 66 + i * (sw + gap), af = clamp(p.ammo - i, 0, 1);
     ctx.fillStyle = '#2b333d'; rr(fx, y + 59, sw, 18, 5); ctx.fill();
     if (af > 0) { ctx.fillStyle = af >= 1 ? '#f0a33a' : '#8f6a3c'; rr(fx, y + 59, Math.max(6, sw * af), 18, Math.min(5, sw / 2)); ctx.fill(); }
   }
@@ -1496,6 +1570,11 @@ ${controls}
         <br>• <b style="color:#b46bff">⚔ Lilla sværd</b> – <b>+25 % skade for altid</b> (kan samles flere gange)
         <br>• <b style="color:#2fe0d0">» Turkis lyn</b> – <b>+25 % skudhastighed for altid</b> (hurtigere genladning, kan samles flere gange)
         <br>• <b style="color:#3ee06a">▲ Grøn krystal</b> – giver dig <b>1 skud ekstra</b> for resten af spillet (op til 8)</li>
+      <li><b>Sjældne våben</b> dukker op på banen (cirka hvert 45. sekund, og bossen taber et). Gå hen over dem for at skifte:
+        <br>• <b style="color:#ff9a4a">Shotgun</b> – 10 hagl på én gang, men skyder og lader langsomt
+        <br>• <b style="color:#ffd84a">Minigun</b> – skyder mega hurtigt${TOUCH ? ' (hold højre tommel trukket ud)' : ' (hold knappen nede)'}
+        <br>• <b style="color:#6fd3ff">Sniper</b> – uendelig rækkevidde og 4× skade, men skyder langsomt
+        <br>• <b style="color:#9be36f">Rifle</b> – skyder hurtigere og gør lidt mere skade end pistolen</li>
       <li><b>Byg vægge:</b> du får 1 byggemateriale hvert 3. sekund (højst 30), og 1 materiale bygger 1 væg. Du kan selv gå og skyde igennem dine vægge – robotterne kan ikke. Robotterne går udenom, hvis der er en åbning, ellers skyder de væggen i stykker.</li>
       <li><b>Buske</b> skjuler dig. Men skyder du fra en busk, kan robotterne se dig et kort øjeblik – og kommer de helt tæt på, opdager de dig.</li>
     </ul>
@@ -1593,6 +1672,15 @@ function adminControls() {
       <button data-a="permdmg">+25 % skade for altid</button>
       <button data-a="permrate">+25 % skudhastighed</button>
     </div>
+    <div class="adm-h">Våben</div>
+    <div class="admin-grid">
+      <button data-a="w-pistol">Pistol</button>
+      <button data-a="w-shotgun">Shotgun</button>
+      <button data-a="w-minigun">Minigun</button>
+      <button data-a="w-sniper">Sniper</button>
+      <button data-a="w-rifle">Rifle</button>
+      <button data-a="w-drop">Læg et våben på banen</button>
+    </div>
     <div class="adm-h">Robotter</div>
     <div class="admin-grid">
       <button data-a="killall">Dræb alle robotter</button>
@@ -1625,6 +1713,11 @@ function adminAction(a) {
   if (a === 'god') { cheats.god = !cheats.god; return adminControls(); }
   if (a === 'ammo') { cheats.ammo = !cheats.ammo; return adminControls(); }
   if (a === 'aimbot') { cheats.aimbot = !cheats.aimbot; return adminControls(); }
+  if (a.startsWith('w-')) {
+    const t = a.slice(2);
+    if (t === 'drop') { spawnWeaponDrop(); adminToast('Et våben er lagt på banen'); }
+    else { p.weapon = t; p.ammo = p.maxAmmo; p.fireCd = 0; adminToast('Du har nu: ' + WEAPONS[t].name); }
+  }
   if (a === 'mats') { materials += 20; adminToast('Byggemateriale: ' + materials); }
   if (a === 'heal') { p.hp = p.maxHp; adminToast('Liv fyldt op'); }
   if (a === 'super') { superCharge = CFG.superHits; adminToast('Super er klar'); }
