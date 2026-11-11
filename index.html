@@ -75,6 +75,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.22', d: '11-11-2026', items: ['Admin-tilstand på startskærmen: alle kan bruge admin-panelet uden kode – men runden tæller ikke på highscore-tavlen', 'Highscore-knap i pause-menuen'] },
   { v: '1.21', d: '11-11-2026', items: ['Nederst står der nu "Made by agent7329"'] },
   { v: '1.20', d: '11-11-2026', items: ['Navn nederst ved siden af versionsnummeret', 'Rettet: versionsnummeret kan nu klikkes, også når menuen er åben'] },
   { v: '1.19', d: '11-11-2026', items: ['Highscore-tavlen vises altid sammen med "Spil igen", når du dør – knapperne kommer først, når tavlen er hentet', 'Mere kompakt game over-skærm på telefoner på langs'] },
@@ -433,7 +434,7 @@ function tryBuild(wx, wy, quiet) {
 
 // ---------- Spiltilstand ----------
 const cheats = { god: false, ammo: false, aimbot: false };
-let adminUnlocked = false, adminFrom = 'play', adminCount = 1, usedAdmin = false;
+let adminUnlocked = false, adminFrom = 'play', adminCount = 1, usedAdmin = false, adminMode = false;
 let ammoTimer, maxHpTimer, permDmgTimer, permRateTimer, player, robots, bullets, particles, missiles, rings, powerups, popups, powerTimer, buffs, superCharge, wave, kills, time, waveTimer, shake = 0, state = 'menu';
 let bannerText = '', bannerT = 0;
 const cam = { x: 0, y: 0 };
@@ -1515,6 +1516,7 @@ function drawHUDInner() {
   const lines = [`Bølge ${wave}`, `Robotter: ${robots.length}`, `Nedlagt: ${kills}`];
   const extraColors = [];
   if (p.dmgMul > 1) { lines.push(`Skade: +${Math.round((p.dmgMul - 1) * 100)} %`); extraColors.push('#c99bff'); }
+  if (adminMode) { lines.push('ADMIN-TILSTAND'); extraColors.push('#ffd84a'); }
   if (p.rateMul > 1) { lines.push(`Skudhast.: +${Math.round((p.rateMul - 1) * 100)} %`); extraColors.push('#6ff0e2'); }
   ctx.fillStyle = 'rgba(13,16,20,.75)'; rr(VW - 170, 8, 162, 82 + (lines.length - 3) * 23, 12); ctx.fill();
   lines.forEach((l, i) => { ctx.fillStyle = i === 0 ? '#fff' : i >= 3 ? extraColors[i - 3] : '#c9d3df'; ctx.font = (i === 0 ? '800 17px' : '600 14px') + ' system-ui,sans-serif'; ctx.fillText(l, VW - 20, 30 + i * 23); });
@@ -1602,7 +1604,7 @@ function menu() {
       <li><b>Skift våben:</b> tast 1 = pistol, 2, 3 … = våbnene i den rækkefølge du samlede dem op (eller klik på dem nederst)</li>`;
   const portrait = TOUCH && VH > VW;
   panel.innerHTML = `<h1>Robotjagt</h1><p>Overlev så mange bølger af robotter som muligt. <span style="color:#93a0b0">· v${VERSION}</span></p>
-    <div class="menu-btns"><button id="go">Start spil</button><button class="sec" id="hsnow">🏆 Highscore</button><button class="sec" id="lognow">Ændringslog</button></div>
+    <div class="menu-btns"><button id="go">Start spil</button><button class="sec" id="admstart">⚙ Admin-tilstand</button><button class="sec" id="hsnow">🏆 Highscore</button><button class="sec" id="lognow">Ændringslog</button></div>
     ${portrait ? '<p class="tip">📱 Spillet er bedst, når du vender telefonen på langs.</p>' : ''}
     ${TOUCH && !canFullscreen() ? '<p class="tip">Tip: Del → "Føj til hjemmeskærm" giver fuld skærm.</p>' : ''}
     <details ${TOUCH ? '' : 'open'}><summary>Sådan spiller du</summary>
@@ -1635,22 +1637,27 @@ ${controls}
         <br>• <b style="color:#6fd3ff">Sniper</b> – uendelig rækkevidde og 4× skade, men skyder langsomt
         <br>• <b style="color:#9be36f">Rifle</b> – skyder hurtigere og gør lidt mere skade end pistolen</li>
       <li><b>Byg vægge:</b> du får 1 byggemateriale hvert 3. sekund (højst 30), og 1 materiale bygger 1 væg. Du kan selv gå og skyde igennem dine vægge – robotterne kan ikke. Robotterne går udenom, hvis der er en åbning, ellers skyder de væggen i stykker.</li>
+      <li><b>Admin-tilstand</b> (knappen på startskærmen): alle kan bruge admin-panelet uden kode – men runden kommer ikke på highscore-tavlen.</li>
       <li><b>Buske</b> skjuler dig. Men skyder du fra en busk, kan robotterne se dig et kort øjeblik – og kommer de helt tæt på, opdager de dig.</li>
     </ul>
     </details>`;
   overlay.classList.remove('hidden');
-  document.getElementById('go').onclick = () => { if (TOUCH) goFullscreen(); start(); };
+  document.getElementById('go').onclick = () => { if (TOUCH) goFullscreen(); start(false); };
+  document.getElementById('admstart').onclick = () => { if (TOUCH) goFullscreen(); start(true); };
   document.getElementById('lognow').onclick = openLog;
   document.getElementById('hsnow').onclick = () => openHighscore('menu');
 }
-function start() { reset(); usedAdmin = false; state = 'play'; overlay.classList.add('hidden'); last = performance.now(); }
+// admin = true: admin-tilstand – alle har admin uden kode, men runden tæller ikke på highscore
+function start(admin) { reset(); adminMode = !!admin; usedAdmin = adminMode; state = 'play'; overlay.classList.add('hidden'); last = performance.now(); }
 function pause() {
   state = 'pause'; mouse.down = false; keys.clear();
   showPanel(`<h1>Pause</h1><p>Bølge ${wave} · ${kills} robotter nedlagt</p>`, 'Fortsæt', resume);
-  const ab = document.createElement('button'); ab.className = 'sec'; ab.textContent = '🔒 Admin'; ab.style.marginLeft = '8px';
+  const ab = document.createElement('button'); ab.className = 'sec'; ab.textContent = adminMode ? '⚙ Admin' : '🔒 Admin'; ab.style.marginLeft = '8px';
   ab.onclick = openAdmin; panel.appendChild(ab);
   const rb = document.createElement('button'); rb.className = 'sec'; rb.textContent = '↻ Genstart'; rb.style.marginLeft = '8px';
-  rb.onclick = () => { if (TOUCH) goFullscreen(); start(); }; panel.appendChild(rb);
+  rb.onclick = () => { if (TOUCH) goFullscreen(); start(adminMode); }; panel.appendChild(rb);
+  const hb = document.createElement('button'); hb.className = 'sec'; hb.textContent = '🏆 Highscore'; hb.style.marginLeft = '8px';
+  hb.onclick = () => openHighscore('pause'); panel.appendChild(hb);
 }
 function resume() { state = 'play'; overlay.classList.add('hidden'); last = performance.now(); }
 function gameOver() {
@@ -1708,13 +1715,13 @@ async function openHighscore(from) {
   overlay.classList.remove('hidden');
   const list = await hsLoad();
   panel.innerHTML = `<h1>🏆 Highscore</h1><p class="muted">${hsWhere()} · top 10</p>${hsTable(list)}<button id="hsback">Tilbage</button>`;
-  document.getElementById('hsback').onclick = () => back === 'over' ? gameOverPanel() : menu();
+  document.getElementById('hsback').onclick = () => back === 'over' ? gameOverPanel() : back === 'pause' ? pause() : menu();
 }
 
 async function gameOverPanel() {
   if (state !== 'over') return;
   const rekord = lastRekord, k = kills, w = wave;
-  const again = () => { if (TOUCH) goFullscreen(); start(); };
+  const again = () => { if (TOUCH) goFullscreen(); start(adminMode); };
   const head = `<h1>Du blev nedlagt</h1>
       <div class="stats">
         <div class="stat"><div class="n">${w}</div><div class="l">Bølge</div></div>
@@ -1727,7 +1734,7 @@ async function gameOverPanel() {
   const list = await Promise.race([hsLoad(), new Promise(r => setTimeout(() => r(null), 5000))]);
   if (state !== 'over') return;
   let mid;
-  if (usedAdmin) mid = '<p class="muted">Du har brugt admin-panelet i denne runde, så den kommer ikke på highscore-tavlen.</p>' + hsTable(list);
+  if (usedAdmin) mid = `<p class="muted">${adminMode ? 'Du spillede i admin-tilstand' : 'Du har brugt admin-panelet i denne runde'}, så den kommer ikke på highscore-tavlen.</p>` + hsTable(list);
   else if (hsQualifies(list, k, w)) {
     let saved = ''; try { saved = localStorage.getItem('robotjagt_name') || ''; } catch (e) {}
     mid = `<p><b>Du kom på top 10!</b> Skriv dit navn:</p>
@@ -1779,8 +1786,7 @@ function openAdmin() {
   if (state === 'play' || state === 'pause') adminFrom = state;
   state = 'admin'; mouse.down = false; keys.clear();
   overlay.classList.remove('hidden');
-  if (adminUnlocked) usedAdmin = true;
-  adminUnlocked ? adminControls() : adminLogin();
+  if (adminMode || adminUnlocked) { usedAdmin = true; adminControls(); } else adminLogin();
 }
 function closeAdmin() {
   if (adminFrom === 'pause') pause();
@@ -1845,9 +1851,9 @@ function adminControls() {
       <button data-a="p-permrate">» Turkis lyn</button>
     </div>
     <div class="err" id="admmsg" style="color:#6fe39a"></div>
-    <button id="admclose">Tilbage til spillet</button> <button id="admlogout" class="sec">🔒 Log ud</button>`;
+    <button id="admclose">Tilbage til spillet</button>${adminMode ? '' : ' <button id="admlogout" class="sec">🔒 Log ud</button>'}`;
   document.getElementById('admclose').onclick = closeAdmin;
-  document.getElementById('admlogout').onclick = () => { adminUnlocked = false; closeAdmin(); };
+  const lo = document.getElementById('admlogout'); if (lo) lo.onclick = () => { adminUnlocked = false; closeAdmin(); };
   panel.querySelectorAll('[data-a]').forEach(b => b.onclick = () => adminAction(b.dataset.a));
 }
 function adminAction(a) {
