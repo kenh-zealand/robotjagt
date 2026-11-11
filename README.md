@@ -11,8 +11,9 @@ Hele spillet ligger i én fil, `index.html`. Download den og åbn den i en brows
 | Bevæg dig | W, A, S, D (eller piletaster) | Venstre tommel |
 | Skyd (automatisk sigte) | Mellemrum | Kort tryk med højre tommel |
 | Sigt selv | Mus + venstreklik | Træk med højre tommel og slip |
-| Super-missil | E eller højreklik | SUPER-knappen |
+| Super-missil | Q eller højreklik | SUPER-knappen |
 | Pause | P eller Esc | Pauseknappen |
+| Admin-panel (kræver kode) | E | Pauseknappen → Admin |
 
 ## Indhold
 

@@ -50,6 +50,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.10', d: '11-11-2026', items: ['Admin-panelet åbnes nu med tasten E (før O)', 'Super-missilet er flyttet til tasten Q – højreklik virker stadig'] },
   { v: '1.9', d: '11-11-2026', items: ['Versionsnummer nederst i venstre hjørne', 'Ændringslog – klik på versionsnummeret for at se den'] },
   { v: '1.8', d: '11-11-2026', items: ['Nyt permanent powerup: turkis lyn » giver +25 % skudhastighed for altid (kan samles flere gange)'] },
   { v: '1.7', d: '11-11-2026', items: ['Log ud-knap i admin-panelet – så skal koden skrives igen'] },
@@ -305,8 +306,8 @@ addEventListener('keydown', e => {
   if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) e.preventDefault();
   if ((e.code === 'KeyP' || e.code === 'Escape') && !e.repeat) { if (state === 'play') pause(); else if (state === 'pause') resume(); return; }
   if ((e.code === 'Enter') && state !== 'play') { if (state === 'pause') resume(); else start(); return; }
-  if (e.code === 'KeyE' && !e.repeat) { fireSuper(); return; }
-  if (e.code === 'KeyO' && !e.repeat && (state === 'play' || state === 'pause')) { openAdmin(); return; }
+  if (e.code === 'KeyQ' && !e.repeat) { fireSuper(); return; }
+  if (e.code === 'KeyE' && !e.repeat && (state === 'play' || state === 'pause')) { openAdmin(); return; }
   keys.add(e.code);
 });
 addEventListener('keyup', e => keys.delete(e.code));
@@ -1079,7 +1080,7 @@ function drawHUD() {
   }
   if (ready) {
     ctx.font = '800 12px system-ui,sans-serif'; ctx.fillStyle = '#ffd84a';
-    ctx.fillText(isTouch ? 'MISSIL KLAR – tryk på knappen' : 'MISSIL KLAR – tryk E (eller højreklik)', x, y + 116);
+    ctx.fillText(isTouch ? 'MISSIL KLAR – tryk på knappen' : 'MISSIL KLAR – tryk Q (eller højreklik)', x, y + 116);
   }
 
   // Skjult-status
@@ -1169,7 +1170,7 @@ function menu() {
       <li><b>Mobil:</b> venstre tommel styrer, højre tommel sigter – slip for at skyde. Et kort tryk sigter automatisk.</li>
       <li>Du har <b>3000 liv</b> og <b>3 skud</b>. Hvert skud lader selv op igen på 0,5 sekund – men først 0,25 sekund efter, at du har skudt.</li>
       <li>Efter <b>5 sekunder uden skade</b> får du 20 % liv tilbage hvert sekund.</li>
-      <li><b>Super:</b> hver 10. træffer giver et målsøgende missil. Tryk <b>E</b> (eller højreklik). Det jager selv den nærmeste robot, og eksplosionen tager 75 % af livet på alle robotter i et stort område (minibossen mister kun 20 % og bossen 8 %).</li>
+      <li><b>Super:</b> hver 10. træffer giver et målsøgende missil. Tryk <b>Q</b> (eller højreklik). Det jager selv den nærmeste robot, og eksplosionen tager 75 % af livet på alle robotter i et stort område (minibossen mister kun 20 % og bossen 8 %).</li>
       <li>Robotterne bliver stærkere for hver bølge: <b>+15 % liv</b> og <b>+12 % skade</b> pr. bølge.</li>
       <li>I bølge 1 har robotterne <b>1000 liv</b> – det kræver 4 skud. Der er tre slags:
         <br>• <b>Skyderobot</b> (grå) – skyder på afstand
