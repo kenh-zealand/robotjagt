@@ -75,6 +75,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.23', d: '11-11-2026', items: ['Minibossen kan ikke længere lave spurt', 'Alle flammekastere gør 50 % mindre skade (flammerobot, miniboss og boss)'] },
   { v: '1.22', d: '11-11-2026', items: ['Admin-tilstand på startskærmen: alle kan bruge admin-panelet uden kode – men runden tæller ikke på highscore-tavlen', 'Highscore-knap i pause-menuen'] },
   { v: '1.21', d: '11-11-2026', items: ['Nederst står der nu "Made by agent7329"'] },
   { v: '1.20', d: '11-11-2026', items: ['Navn nederst ved siden af versionsnummeret', 'Rettet: versionsnummeret kan nu klikkes, også når menuen er åben'] },
@@ -125,7 +126,7 @@ const CFG = {
   sawDamage: 250,       // pr. hug
   sawTick: 0.25,        // hug hvert 0,25 sek. = 1000 skade pr. sek.
   flameRange: 240,      // flammerobot: kort rækkevidde
-  flameDps: 800,        // skade pr. sekund i flammen
+  flameDps: 400,        // skade pr. sekund i flammen (halveret i v1.23)
   closeSight: 75,       // så tæt på kan robotter se dig, selv i en busk
   superHits: 10,        // træffere før super er klar
   missileSpeed: 720,
@@ -138,7 +139,7 @@ const CFG = {
   bossDamage: 300,      // pr. kugle (3 pistoler)
   bossFire: 1.5,        // sek. mellem salverne
   bossFlameRange: 270,
-  bossFlameDps: 600,    // pr. flammekaster (der er 2)
+  bossFlameDps: 300,    // pr. flammekaster (halveret i v1.23)
   miniHp: 2500,         // miniboss i hver bølge
   miniSpeed: 90,
   miniFire: 1.2,
@@ -652,7 +653,7 @@ function damageRobot(r, dmg, x, y) {
 function miniKit(w) {
   return {
     guns: Math.min(6, 2 + Math.floor((w - 1) / 2)), // 2 pistoler, +1 hver 2. bølge (max 6)
-    dash: w >= 2,                                    // fra bølge 2: angrebs-spurt med saven
+    dash: false,                                     // minibossen spurter ikke længere (v1.23)
     flame: w >= 4,                                   // fra bølge 4: flammekaster
     ring: w >= 6 ? 8 + 2 * Math.floor((w - 6) / 2) : 0, // fra bølge 6: skud i en ring rundt om sig
     homing: w >= 8 ? 1 : 0,                          // fra bølge 8: målsøgende raket
@@ -1620,7 +1621,7 @@ ${controls}
         <br>• <b>Flammerobot</b> (orange) – brænder dig på kort afstand
         <br>• <b>Teleport-robot</b> (lilla, fra bølge 3) – blinker og hopper rundt på banen, og skyder lige efter et hop
         <br>• <b>Usynlig robot</b> (fra bølge 4) – du kan ikke se den, kun dens lyseblå skud. Den automatiske sigte rammer den ikke – sigt selv ${TOUCH ? 'ved at trække med højre tommel' : 'med musen'}</li>
-      <li><b>Miniboss</b> i hver bølge (blå): 2500 liv, pistoler og en sav foran. Den taber en powerup, når den dør. Den får flere angreb hver bølge: flere pistoler, spurt (bølge 2), flammekaster (bølge 4), ring-skud (bølge 6) og målsøgende raket (bølge 8).</li>
+      <li><b>Miniboss</b> i hver bølge (blå): 2500 liv, pistoler og en sav foran. Den taber en powerup, når den dør. Den får flere angreb hver bølge: flere pistoler, flammekaster (bølge 4), ring-skud (bølge 6) og målsøgende raket (bølge 8).</li>
       <li><b>Boss</b> hver 5. bølge: 5000 liv, 2 flammekastere og 3 pistoler. Den er langsom, og dens skud er langsomme – så du kan undvige. Den skyder også i en ring rundt om sig, og fra bølge 10 får den målsøgende raketter og en chokbølge. Bossen har altid flere angreb end minibossen.</li>
       <li><b>Powerups</b> dukker op rundt på banen – gå hen over dem:
         <br>• <b style="color:#ff7ab0">+</b> Helbredelse – 1200 liv tilbage
