@@ -29,6 +29,7 @@ Spillet virker både på computer og telefon. På telefonen går det i fuld skæ
 - Sjældne våben at samle op: shotgun, minigun, sniper og rifle
 - Super: et målsøgende missil efter hver 10. træffer
 - Powerups: helbredelse, dobbelt skade, super, hurtig genladning, +500 max liv, +1 skud, +25 % skade og +25 % skudhastighed
+- Highscore-tavle med top 10 (fælles for alle på keha.dk/robotspil). Runder hvor admin-panelet er brugt, kommer ikke på
 - Admin-panel med kode
 - Ændringslog i spillet (klik på versionsnummeret nederst til venstre)
 
