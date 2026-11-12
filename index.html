@@ -82,6 +82,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.55', d: '12-11-2026', items: ['Miniboss, boss og ultra-boss smadrer med det samme alle dine vægge inden for 3 spillerbredder', 'Flammerobotternes flammer er dobbelt så store og når dobbelt så langt'] },
   { v: '1.54', d: '12-11-2026', items: ['Der kan ligge ubegrænset mange granater på banen på samme tid, og der er ingen grænse for, hvor mange du kan have'] },
   { v: '1.53', d: '12-11-2026', items: ['Regnbue-skinnet er gjort meget flottere: holografisk regnbue i to lag, lysende glorie, glans, kredsende lys og et regnbuespor, når du løber', 'Med regnbue-skin bliver dit våben også regnbuefarvet'] },
   { v: '1.52', d: '12-11-2026', items: ['Boss, miniboss og ultra-boss smadrer dine vægge, så snart de rører dem', 'Bygger du dig inde i en kasse, finder alle robotter dig og tager den hurtigste vej – også gennem væggene, hvis det går hurtigere end en lang omvej'] },
@@ -163,7 +164,9 @@ const CFG = {
   sawDamage: 250,       // pr. hug
   sawTick: 0.25,
   sawHitsPerWall: 10,   // en savrobot skal hugge 10 gange for at ødelægge en bygget væg        // hug hvert 0,25 sek. = 1000 skade pr. sek.
-  flameRange: 240,      // flammerobot: kort rækkevidde
+  flameRange: 240,      // flammer fra minibossens flammekaster
+  flameRobotRange: 480, // flammerobot: dobbelt så store flammer
+  bossWallSmash: 108,   // bosser smadrer dine vægge inden for 3 spillerbredder fra kanten af bossen
   flameDps: 400,        // skade pr. sekund i flammen (halveret i v1.23)
   closeSight: 75,       // så tæt på kan robotter se dig, selv i en busk
   superHits: 10,        // træffere før super er klar
@@ -492,7 +495,7 @@ function attackWall(r, dt) {
     return;
   }
   if (r.type === 'flame') {
-    if (d < CFG.flameRange) {
+    if (d < CFG.flameRobotRange) {
       r.flaming = true; damageWall(w, CFG.flameDps * dt);
       for (let k = 0; k < 2; k++) {
         const a = r.angle + rand(-0.25, 0.25), v = rand(380, 470), life = rand(0.4, 0.55);
@@ -1454,10 +1457,11 @@ function updateRobots(dt) {
       if (r.teleCd <= 0 && (r.state !== 'wander' || Math.random() < 0.4)) { r.teleT = 0.45; r.teleCd = rand(2.5, 4); continue; }
     }
     const d = dist(r, player);
-    // Bosser smadrer dine vægge, så snart de rører dem
+    // Bosser smadrer dine vægge, så snart de kommer tæt på
     if (r.type === 'boss' || r.type === 'mini' || r.type === 'ultra') {
-      builtInBox(r.x - r.r - 8, r.y - r.r - 8, r.x + r.r + 8, r.y + r.r + 8, w => {
-        if (circleHitsRect(r.x, r.y, r.r + 6, w)) { damageWall(w, w.hp + 1, true); shake = Math.max(shake, 4); }
+      const R = r.r + CFG.bossWallSmash; // smadrer alle dine vægge med det samme inden for 3 spillerbredder
+      builtInBox(r.x - R, r.y - R, r.x + R, r.y + R, w => {
+        if (circleHitsRect(r.x, r.y, R, w)) { damageWall(w, w.hp + 1, true); shake = Math.max(shake, 4); }
         return false;
       });
     }
@@ -1488,12 +1492,12 @@ function updateRobots(dt) {
       mx += -uy * r.strafe * 0.4; my += ux * r.strafe * 0.4;
       moveDir(r, mx, my, CFG.robotSpeed * 1.1 * dt);
       r.fireCd -= dt;
-      if (d < CFG.flameRange && r.fireCd <= 0) {
+      if (d < CFG.flameRobotRange && r.fireCd <= 0) {
         r.flaming = true;
-        for (let k = 0; k < 3; k++) {
-          const a = r.angle + rand(-0.3, 0.3), v = rand(380, 470), life = rand(0.45, 0.6);
+        for (let k = 0; k < 6; k++) { // dobbelt så store flammer: længere og tykkere
+          const a = r.angle + rand(-0.3, 0.3), v = rand(760, 940), life = rand(0.45, 0.6);
           particles.push({ x: r.x + Math.cos(r.angle) * 32, y: r.y + Math.sin(r.angle) * 32, vx: Math.cos(a) * v, vy: Math.sin(a) * v,
-            life, max: life, color: ['#ffdf6b', '#ff9d3b', '#ff5a2a'][k], size: rand(4, 8), drag: 0.965, grow: true });
+            life, max: life, color: ['#ffdf6b', '#ff9d3b', '#ff5a2a'][k % 3], size: rand(8, 16), drag: 0.965, grow: true });
         }
         hitPlayer(CFG.flameDps * dt, true);
       }
