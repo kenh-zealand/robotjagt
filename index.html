@@ -79,6 +79,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.48', d: '12-11-2026', items: ['Flammekasteren giver efterbrand: robotter du rammer, brænder videre i 3 sekunder (300 skade pr. sekund, plus dine skade-opgraderinger). Robotternes egne flammer giver ikke efterbrand'] },
   { v: '1.47', d: '12-11-2026', items: ['Tre sværhedsgrader på startskærmen: Let, Normal og Svær', 'Let: dobbelt liv, dobbelt så hurtig genladning, robotterne er halvt så stærke. Miniboss hver 5. bølge, boss hver 20., ingen ultra-boss. Mellemrum sigter automatisk på nærmeste robot', 'Svær: du er halvt så stærk, robotterne dobbelt så stærke. Ingen genladning og ingen gratis byggemateriale – find skud-kasser og trækasser på banen', 'Highscore-tavle for hver sværhedsgrad – plus en Admin-tavle til runder med admin', 'Genladning: kun et rigtigt skud sætter genladningen på pause – man kan lade op, selvom man spammer knappen'] },
   { v: '1.46', d: '12-11-2026', items: ['En ny hemmelig kode giver et diamant-skin i næste runde'] },
   { v: '1.45', d: '12-11-2026', items: ['Tryk E igen for at lukke admin-panelet'] },
@@ -208,6 +209,8 @@ const CFG = {
   hardStartAmmo: 15,    // Svær: du starter med 15 skud og lader ikke selv op
   hardAmmoPickup: 8,    // Svær: en skud-kasse giver 8 skud
   hardWoodPickup: 5,    // Svær: en trækasse giver 5 byggematerialer
+  burnTime: 3,          // efterbrand fra din flammekaster: robotten brænder i 3 sek.
+  burnDps: 300,         // efterbrandens skade pr. sekund (før dine skade-opgraderinger)
   maxPowerups: 4,       // højst så mange powerups på banen ad gangen
   healAmount: 1200,     // helbredelse: +1200 liv
   buffTime: 10,         // skade- og genladnings-powerup varer 10 sek.
@@ -853,6 +856,8 @@ function tryShoot(angle) {
       if (Math.abs(ad) > W.spread + r.r / Math.max(d, 1)) continue;
       if (!cheats.wallhack && !lineOfSight(p, r)) continue;
       hitRobot(r, { dmg, x: r.x, y: r.y, superGain: W.superGain });
+      // efterbrand: robotten brænder videre (kun fra dit våben – robotternes flammer giver ikke efterbrand)
+      r.burnT = CFG.burnTime; r.burnDps = CFG.burnDps * p.dmgMul * D.playerDmg * (buffs.damage > 0 ? 2 : 1);
     }
     return;
   }
@@ -896,10 +901,10 @@ function hitRobot(r, b) {
   }
   damageRobot(r, b.dmg, b.x, b.y);
 }
-function damageRobot(r, dmg, x, y) {
+function damageRobot(r, dmg, x, y, quiet) {
   if (!robots.includes(r)) return;
-  r.hp -= dmg; r.flash = 0.12;
-  burst(x, y, '#ffe1a0', 8, 220);
+  r.hp -= dmg;
+  if (!quiet) { r.flash = 0.12; burst(x, y, '#ffe1a0', 8, 220); }
   if (r.state !== 'chase') { r.lastSeen = { x: player.x, y: player.y }; r.searchT = 6; } // de hører hvor skuddet kom fra
   if (r.hp <= 0) {
     robots.splice(robots.indexOf(r), 1); kills++; shake = Math.max(shake, 9);
@@ -1378,7 +1383,20 @@ function updatePlayer(dt) {
   p.flash = Math.max(0, p.flash - dt);
 }
 
+function updateBurning(dt) {
+  for (const r of robots.slice()) {
+    if (!(r.burnT > 0)) continue;
+    r.burnT -= dt;
+    if (Math.random() < 0.5) {
+      const life = rand(0.3, 0.5);
+      particles.push({ x: r.x + rand(-r.r, r.r) * 0.8, y: r.y + rand(-r.r, r.r) * 0.6, vx: rand(-15, 15), vy: rand(-70, -30), life, max: life,
+        color: ['#ffdf6b', '#ff9d3b', '#ff5a2a'][Math.floor(Math.random() * 3)], size: rand(3, 6), drag: 0.97, grow: true });
+    }
+    damageRobot(r, r.burnDps * dt, r.x, r.y, true);
+  }
+}
 function updateRobots(dt) {
+  updateBurning(dt);
   for (const r of robots) {
     r.flash = Math.max(0, r.flash - dt); r.alertT = Math.max(0, r.alertT - dt);
     if (r.type === 'tele') {
