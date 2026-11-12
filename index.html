@@ -82,7 +82,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
-  { v: '1.55', d: '12-11-2026', items: ['Miniboss, boss og ultra-boss smadrer med det samme alle dine vægge inden for 3 spillerbredder', 'Flammerobotternes flammer er dobbelt så store og når dobbelt så langt'] },
+  { v: '1.55', d: '12-11-2026', items: ['Miniboss, boss og ultra-boss smadrer med det samme alle dine vægge inden for 3 spillerbredder', 'Flammerobotternes flammer er dobbelt så store, så de passer til, hvor langt de rækker'] },
   { v: '1.54', d: '12-11-2026', items: ['Der kan ligge ubegrænset mange granater på banen på samme tid, og der er ingen grænse for, hvor mange du kan have'] },
   { v: '1.53', d: '12-11-2026', items: ['Regnbue-skinnet er gjort meget flottere: holografisk regnbue i to lag, lysende glorie, glans, kredsende lys og et regnbuespor, når du løber', 'Med regnbue-skin bliver dit våben også regnbuefarvet'] },
   { v: '1.52', d: '12-11-2026', items: ['Boss, miniboss og ultra-boss smadrer dine vægge, så snart de rører dem', 'Bygger du dig inde i en kasse, finder alle robotter dig og tager den hurtigste vej – også gennem væggene, hvis det går hurtigere end en lang omvej'] },
@@ -165,7 +165,7 @@ const CFG = {
   sawTick: 0.25,
   sawHitsPerWall: 10,   // en savrobot skal hugge 10 gange for at ødelægge en bygget væg        // hug hvert 0,25 sek. = 1000 skade pr. sek.
   flameRange: 240,      // flammer fra minibossens flammekaster
-  flameRobotRange: 480, // flammerobot: dobbelt så store flammer
+  flameRobotRange: 240, // flammerobot: rækkevidde (flammerne er tegnet, så de passer til den)
   bossWallSmash: 108,   // bosser smadrer dine vægge inden for 3 spillerbredder fra kanten af bossen
   flameDps: 400,        // skade pr. sekund i flammen (halveret i v1.23)
   closeSight: 75,       // så tæt på kan robotter se dig, selv i en busk
@@ -1494,8 +1494,8 @@ function updateRobots(dt) {
       r.fireCd -= dt;
       if (d < CFG.flameRobotRange && r.fireCd <= 0) {
         r.flaming = true;
-        for (let k = 0; k < 6; k++) { // dobbelt så store flammer: længere og tykkere
-          const a = r.angle + rand(-0.3, 0.3), v = rand(760, 940), life = rand(0.45, 0.6);
+        for (let k = 0; k < 6; k++) { // dobbelt så store flammer, der rækker præcis så langt, som de gør skade
+          const a = r.angle + rand(-0.3, 0.3), v = rand(600, 680), life = rand(0.45, 0.6);
           particles.push({ x: r.x + Math.cos(r.angle) * 32, y: r.y + Math.sin(r.angle) * 32, vx: Math.cos(a) * v, vy: Math.sin(a) * v,
             life, max: life, color: ['#ffdf6b', '#ff9d3b', '#ff5a2a'][k % 3], size: rand(8, 16), drag: 0.965, grow: true });
         }
