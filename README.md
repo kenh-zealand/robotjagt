@@ -11,7 +11,7 @@ Spillet virker både på computer og telefon. På telefonen går det i fuld skæ
 | Handling | Computer | Mobil |
 |---|---|---|
 | Bevæg dig | W, A, S, D (eller piletaster) | Venstre tommel |
-| Skyd (automatisk sigte) | Mellemrum | Kort tryk med højre tommel |
+| Skyd (hvor du sigter) | Mellemrum eller venstreklik | Kort tryk med højre tommel (sigter automatisk) |
 | Sigt selv | Mus + venstreklik | Træk med højre tommel og slip |
 | Byg en væg | Højreklik (hold og træk for flere) | BYG-knappen, og tryk på banen |
 | Super-missil | Q | SUPER-knappen |
