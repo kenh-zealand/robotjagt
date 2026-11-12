@@ -2470,7 +2470,7 @@ const CODES = { 193423269: 'gold', 1715379802: 'rainbow', 916669625: 'diamond', 
 function codeHash(t) { let h = 5381; for (const c of t.trim().toLowerCase()) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0; return h; }
 function openCodes() {
   panel.innerHTML = `<h1>🔑 Koder</h1><p>Har du en kode? Skriv den her.</p>
-    <form id="codef"><input id="codein" autocomplete="off" placeholder="Kode"><div class="err" id="codemsg"></div>
+    <form id="codef"><input id="codein" type="password" autocomplete="off" placeholder="Kode"><div class="err" id="codemsg"></div>
     <div class="menu-btns"><button type="submit">Brug kode</button><button type="button" class="sec" id="codeback">Tilbage</button></div></form>`;
   overlay.classList.remove('hidden');
   const inp = document.getElementById('codein'); if (!TOUCH) setTimeout(() => inp.focus(), 50);
