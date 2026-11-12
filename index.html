@@ -52,6 +52,7 @@
   .muted{color:#93a0b0;font-size:13px}
   .rbw{background:linear-gradient(90deg,#ff4d4d,#ffa64d,#ffe14d,#4dff88,#4dd2ff,#7a5cff,#ff4dd8,#ff4d4d);background-size:200% auto;-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:800;animation:rbw 2s linear infinite}
   @keyframes rbw{to{background-position:200% center}}
+  .gld{background:linear-gradient(90deg,#9a6a10,#f2c94c,#fff3b0,#f2c94c,#9a6a10);background-size:200% auto;-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:800;animation:rbw 2.5s linear infinite}
   .hs-h{font-weight:800;font-size:15px;text-align:left;margin:12px 0 0;color:#ffd84a}
   @media (max-height:500px){.stats{margin:8px 0 2px}.stat{padding:6px 12px}.stat .n{font-size:20px}table.hs{font-size:13px;margin:4px 0}table.hs td{padding:3px 6px}.panel h1{margin-bottom:0}}
   @media (max-width:600px),(max-height:500px){.panel{padding:18px 18px}.panel h1{font-size:26px}.panel ul{font-size:14px}}
@@ -1375,6 +1376,11 @@ function updatePlayer(dt) {
     particles.push({ x: p.x - mx * 14 + rand(-6, 6), y: p.y - my * 14 + rand(-6, 6), vx: rand(-20, 20), vy: rand(-20, 20), life, max: life,
       color: `hsl(${(time * 160 + rand(0, 120)) % 360},100%,65%)`, size: rand(2.5, 4.5), drag: 0.9 });
   }
+  if (p.skin === 'flame' && Math.random() < ((mx || my) ? 0.8 : 0.35)) { // flamme-skin: gløder og gnister der stiger op
+    const life = rand(0.4, 0.8);
+    particles.push({ x: p.x - mx * 12 + rand(-10, 10), y: p.y - my * 12 + rand(-10, 6), vx: rand(-25, 25), vy: rand(-110, -50), life, max: life,
+      color: ['#ffd23a', '#ff8a1a', '#ff4a10'][Math.floor(Math.random() * 3)], size: rand(2, 4), drag: 0.95 });
+  }
   p.x += mx * CFG.playerSpeed * dt; p.y += my * CFG.playerSpeed * dt;
   // Egne vægge: man må stå i dem i 3 sek. – bliver man længere, skubbes man ud og kan ikke gå igennem dem i 20 sek.
   p.wallBan = Math.max(0, (p.wallBan || 0) - dt);
@@ -1917,6 +1923,30 @@ function drawPlayer() {
   ctx.save(); ctx.translate(p.x, p.y);
   ctx.globalAlpha = p.hidden ? (p.reveal > 0 ? 0.9 : 0.6) : 1;
   ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(3, 7, p.r, p.r * 0.7, 0, 0, Math.PI * 2); ctx.fill();
+  if (p.skin === 'flame' && p.flash <= 0) { // flamme-aura: bløde ildtunger der rækker ud over kroppen og altid slikker opad
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    for (const [layer, col, sc, alpha] of [[0, '255,60,10', 1, 0.5], [1, '255,140,20', 0.8, 0.65], [2, '255,225,80', 0.6, 0.8]]) {
+      const N = 9, pts = [];
+      for (let k = 0; k < N; k++) {
+        const a = k / N * Math.PI * 2 - Math.PI / 2 + Math.sin(time * 2 + k) * 0.08, up = Math.max(0, -Math.sin(a));
+        const flick = 0.5 + 0.3 * Math.sin(time * (11 + layer * 3) + k * 2.3) + 0.2 * Math.sin(time * 17.7 + k * 4.1 + layer);
+        const len = (p.r * 0.9 + (4 + 28 * up * up) * flick + 3) * sc + p.r * (1 - sc) * 0.6;
+        pts.push([Math.cos(a) * len + Math.sin(time * 6 + k) * 2 * up, Math.sin(a) * len]);
+      }
+      const base = p.r * (0.7 + 0.25 * sc);
+      ctx.beginPath();
+      for (let k = 0; k < N; k++) {
+        const a0 = (k - 0.5) / N * Math.PI * 2 - Math.PI / 2;
+        const [tx, ty] = pts[k];
+        if (k === 0) ctx.moveTo(Math.cos(a0) * base, Math.sin(a0) * base);
+        const a1 = (k + 0.5) / N * Math.PI * 2 - Math.PI / 2;
+        ctx.quadraticCurveTo(tx * 0.75 + Math.cos(a0) * base * 0.25, ty * 0.75 + Math.sin(a0) * base * 0.25, tx, ty);
+        ctx.quadraticCurveTo(tx * 0.75 + Math.cos(a1) * base * 0.25, ty * 0.75 + Math.sin(a1) * base * 0.25, Math.cos(a1) * base, Math.sin(a1) * base);
+      }
+      ctx.closePath(); ctx.fillStyle = `rgba(${col},${alpha})`; ctx.shadowColor = `rgb(${col})`; ctx.shadowBlur = 16; ctx.fill();
+    }
+    ctx.restore();
+  }
   ctx.rotate(p.angle);
   drawGun(p.weapon, 1, p.skin === 'rainbow' && p.flash <= 0 ? (time * 160) % 360 : null);
   const gold = p.skin === 'gold', rainbow = p.skin === 'rainbow';
@@ -1933,6 +1963,11 @@ function drawPlayer() {
     const sx = Math.cos(sa) * p.r * 0.55, sy = Math.sin(sa) * p.r * 0.55;
     ctx.beginPath(); ctx.moveTo(sx, sy - 6); ctx.lineTo(sx + 2, sy - 2); ctx.lineTo(sx + 6, sy); ctx.lineTo(sx + 2, sy + 2); ctx.lineTo(sx, sy + 6); ctx.lineTo(sx - 2, sy + 2); ctx.lineTo(sx - 6, sy); ctx.lineTo(sx - 2, sy - 2); ctx.closePath(); ctx.fill();
     ctx.globalAlpha = 1;
+  } else if (p.skin === 'flame' && p.flash <= 0) { // flamme: blafrende ildtunger der rækker ud over kroppen og altid peger opad
+    const g = ctx.createRadialGradient(0, 0, 1, 0, 0, p.r);
+    g.addColorStop(0, '#fff6c2'); g.addColorStop(0.35, '#ffcc33'); g.addColorStop(0.75, '#ff7a14'); g.addColorStop(1, '#c42a08');
+    circle(0, 0, p.r); ctx.fillStyle = g; ctx.fill();
+    ctx.lineWidth = 2.5; ctx.strokeStyle = `rgba(255,${170 + 60 * Math.sin(time * 12)},60,.9)`; ctx.stroke();
   } else if (rainbow && p.flash <= 0) { // holografisk regnbue: to lag der drejer hver sin vej, glød, glans og kredsende lys
     const hue = (time * 160) % 360, hasConic = !!ctx.createConicGradient;
     const conic = (rot, sat, light) => { const g = ctx.createConicGradient(rot, 0, 0); for (let k = 0; k <= 12; k++) g.addColorStop(k / 12, `hsl(${(hue + k * 30) % 360},${sat}%,${light}%)`); return g; };
@@ -2164,7 +2199,7 @@ function menu() {
   panel.innerHTML = `<h1>Robotjagt</h1><p>Overlev så mange bølger af robotter som muligt. <span style="color:#93a0b0">· v${VERSION}</span></p>
     <div class="diff">${Object.entries(DIFFS).map(([k, d]) => `<button data-d="${k}" class="${k === difficulty ? 'on' : ''}" style="${k === difficulty ? 'border-color:' + d.color : ''}">${d.name}</button>`).join('')}</div>
     <div class="diff-info">${{ easy: 'Dobbelt liv, dobbelt så hurtig genladning, robotterne er halvt så stærke. Miniboss hver 5. bølge, boss hver 20., ingen ultra-boss. Mellemrum sigter automatisk.', normal: 'Det almindelige spil.', hard: 'Du er halvt så stærk, robotterne dobbelt så stærke. Ingen genladning – find skud og træ på banen. Du kan ikke gå gennem dine egne vægge.' }[difficulty]}</div>
-    <div class="menu-btns"><button id="go">Start spil</button><button class="sec" id="admstart">⚙ Admin-tilstand</button><button class="sec" id="hsnow">🏆 Highscore</button><button class="sec" id="codesnow">🔑 Koder</button><button class="sec" id="lognow">Ændringslog</button></div>${pendingSkin ? (pendingSkin === 'diamond' ? '<p class="tip" style="color:#9fefff">💎 Diamant-skin er klar til næste runde</p>' : pendingSkin === 'rainbow' ? '<p class="tip" style="color:#8fd0ff">🌈 Regnbue-skin er klar til næste runde</p>' : '<p class="tip" style="color:#ffd84a">✨ Guld-skin er klar til næste runde</p>') : ''}
+    <div class="menu-btns"><button id="go">Start spil</button><button class="sec" id="admstart">⚙ Admin-tilstand</button><button class="sec" id="hsnow">🏆 Highscore</button><button class="sec" id="codesnow">🔑 Koder</button><button class="sec" id="lognow">Ændringslog</button></div>${pendingSkin ? (pendingSkin === 'diamond' ? '<p class="tip" style="color:#9fefff">💎 Diamant-skin er klar til næste runde</p>' : pendingSkin === 'rainbow' ? '<p class="tip" style="color:#8fd0ff">🌈 Regnbue-skin er klar til næste runde</p>' : pendingSkin === 'flame' ? '<p class="tip" style="color:#ff8a3a">🔥 Flamme-skin er klar til næste runde</p>' : '<p class="tip" style="color:#ffd84a">✨ Guld-skin er klar til næste runde</p>') : ''}
     ${portrait ? '<p class="tip">📱 Spillet er bedst, når du vender telefonen på langs.</p>' : ''}
     ${TOUCH && !canFullscreen() ? '<p class="tip">Tip: Del → "Føj til hjemmeskærm" giver fuld skærm.</p>' : ''}
     <details ${TOUCH ? '' : 'open'}><summary>Sådan spiller du</summary>
@@ -2213,7 +2248,7 @@ ${controls}
   panel.querySelectorAll('[data-d]').forEach(b => b.onclick = () => { difficulty = b.dataset.d; try { localStorage.setItem('robotjagt_diff', difficulty); } catch (e) {} menu(); });
 }
 // admin = true: admin-tilstand – alle har admin uden kode, men runden tæller ikke på highscore
-function start(admin) { D = DIFFS[difficulty]; reset(); if (!D.autoReload) player.ammo = CFG.hardStartAmmo; if (!D.autoMats) materials = CFG.startMaterials; player.skin = pendingSkin; pendingSkin = null; adminFree = false; secretBuf = ''; for (const k in cheats) cheats[k] = false; adminMode = !!admin; usedAdmin = adminMode; state = 'play'; overlay.classList.add('hidden'); last = performance.now(); }
+function start(admin) { D = DIFFS[difficulty]; reset(); if (!D.autoReload) player.ammo = CFG.hardStartAmmo; if (!D.autoMats) materials = CFG.startMaterials; player.skin = pendingSkin; if (player.skin === 'flame') player.dmgMul += 0.1; pendingSkin = null; adminFree = false; secretBuf = ''; for (const k in cheats) cheats[k] = false; adminMode = !!admin; usedAdmin = adminMode; state = 'play'; overlay.classList.add('hidden'); last = performance.now(); }
 function pause() {
   state = 'pause'; mouse.down = false; keys.clear();
   showPanel(`<h1>Pause</h1><p>Bølge ${wave} · ${kills} robotter nedlagt</p>`, 'Fortsæt', resume);
@@ -2248,6 +2283,7 @@ const HS_SHARED = /(^|\.)keha\.dk$/.test(location.hostname);
 const HS_URL = '/wp-json/robotjagt/v1/scores';
 const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const SPECIAL_NAMES = new Set([2882689427, 624971967]);
+const GOLD_NAMES = new Set([1982043600]);
 const hsSort = (a, b) => (b.kills - a.kills) || (b.wave - a.wave);
 // Én tavle pr. sværhedsgrad. Normal bruger den oprindelige tavle.
 const hsKey = m => m === 'normal' ? 'robotjagt_scores' : 'robotjagt_scores_' + m;
@@ -2285,7 +2321,7 @@ function hsTable(list, mark, m) {
   if (list === null) return h + '<p class="muted">Highscore-tavlen kunne ikke hentes lige nu.</p>';
   if (!list.length) return h + '<p class="muted">Tavlen er tom – bliv den første!</p>';
   return h + '<table class="hs"><tr><th>#</th><th>Navn</th><th class="n">Nedlagt</th><th class="n">Bølge</th></tr>' +
-    list.map((e, i) => `<tr class="${mark && e.name === mark.name && e.kills === mark.kills && e.wave === mark.wave ? 'me' : ''}"><td>${i + 1}</td><td>${SPECIAL_NAMES.has(codeHash(String(e.name))) ? `<span class="rbw">${esc(e.name)}</span>` : esc(e.name)}</td><td class="n">${e.kills}</td><td class="n">${e.wave}</td></tr>`).join('') + '</table>';
+    list.map((e, i) => `<tr class="${mark && e.name === mark.name && e.kills === mark.kills && e.wave === mark.wave ? 'me' : ''}"><td>${i + 1}</td><td>${SPECIAL_NAMES.has(codeHash(String(e.name))) ? `<span class="rbw">${esc(e.name)}</span>` : GOLD_NAMES.has(codeHash(String(e.name))) ? `<span class="gld">${esc(e.name)}</span>` : esc(e.name)}</td><td class="n">${e.kills}</td><td class="n">${e.wave}</td></tr>`).join('') + '</table>';
 }
 const hsWhere = () => HS_SHARED ? 'Fælles tavle for alle på keha.dk' : 'Kun denne enhed – den fælles tavle er på <a href="https://keha.dk/robotjagt/" target="_blank" rel="noopener" style="color:#8fd0ff">keha.dk/robotjagt</a>';
 
@@ -2373,7 +2409,7 @@ function openLog() {
 // ---------- Admin-panel ----------
 // ---------- Koder (fra startskærmen) ----------
 let pendingSkin = null; // gælder kun for næste runde
-const CODES = { 193423269: 'gold', 1715379802: 'rainbow', 916669625: 'diamond' }; // koderne gemmes kun som tal, så de ikke kan læses i koden
+const CODES = { 193423269: 'gold', 1715379802: 'rainbow', 916669625: 'diamond', 177609: 'flame' }; // koderne gemmes kun som tal, så de ikke kan læses i koden
 function codeHash(t) { let h = 5381; for (const c of t.trim().toLowerCase()) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0; return h; }
 function openCodes() {
   panel.innerHTML = `<h1>🔑 Koder</h1><p>Har du en kode? Skriv den her.</p>
@@ -2387,6 +2423,7 @@ function openCodes() {
     const msg = document.getElementById('codemsg'), what = CODES[codeHash(inp.value)];
     if (what === 'gold') { pendingSkin = 'gold'; msg.style.color = '#ffd84a'; msg.textContent = '✨ Guld-skin aktiveret til næste runde!'; }
     else if (what === 'diamond') { pendingSkin = 'diamond'; msg.style.color = '#9fefff'; msg.textContent = '💎 Diamant-skin aktiveret til næste runde!'; }
+    else if (what === 'flame') { pendingSkin = 'flame'; msg.style.color = '#ff8a3a'; msg.textContent = '🔥 Flamme-skin aktiveret til næste runde!'; }
     else if (what === 'rainbow') { pendingSkin = 'rainbow'; msg.style.color = '#8fd0ff'; msg.textContent = '🌈 Regnbue-skin aktiveret til næste runde!'; }
     else { msg.style.color = ''; msg.textContent = 'Ukendt kode'; }
     inp.value = ''; inp.focus();
