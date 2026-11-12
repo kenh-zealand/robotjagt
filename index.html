@@ -81,6 +81,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.54', d: '12-11-2026', items: ['Der kan ligge ubegrænset mange granater på banen på samme tid, og der er ingen grænse for, hvor mange du kan have'] },
   { v: '1.53', d: '12-11-2026', items: ['Regnbue-skinnet er gjort meget flottere: holografisk regnbue i to lag, lysende glorie, glans, kredsende lys og et regnbuespor, når du løber', 'Med regnbue-skin bliver dit våben også regnbuefarvet'] },
   { v: '1.52', d: '12-11-2026', items: ['Boss, miniboss og ultra-boss smadrer dine vægge, så snart de rører dem', 'Bygger du dig inde i en kasse, finder alle robotter dig og tager den hurtigste vej – også gennem væggene, hvis det går hurtigere end en lang omvej'] },
   { v: '1.51', d: '12-11-2026', items: ['De første 3 minibosser i en runde har det gamle liv (2500 i stedet for 7500)'] },
@@ -1186,7 +1187,7 @@ let grenadeDrops = [], grenadeTimer = 0, grenadesFlying = [];
 function updateGrenades(dt) {
   grenadeTimer -= dt;
   if (grenadeTimer <= 0) {
-    if (!grenadeDrops.length) {
+    { // ingen grænse: der kan ligge så mange granater på banen, som der er dukket op
       for (let i = 0; i < 40; i++) {
         const pt = randomFreePoint();
         if (inBush(pt) || Math.hypot(pt.x - player.x, pt.y - player.y) < 300) continue;
