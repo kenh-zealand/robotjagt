@@ -81,6 +81,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.49', d: '12-11-2026', items: ['Svær: du kan ikke længere gå igennem dine egne vægge'] },
   { v: '1.48', d: '12-11-2026', items: ['Flammekasteren giver efterbrand: robotter du rammer, brænder videre i 3 sekunder (300 skade pr. sekund, plus dine skade-opgraderinger). Robotternes egne flammer giver ikke efterbrand'] },
   { v: '1.47', d: '12-11-2026', items: ['Tre sværhedsgrader på startskærmen: Let, Normal og Svær', 'Let: dobbelt liv, dobbelt så hurtig genladning, robotterne er halvt så stærke. Miniboss hver 5. bølge, boss hver 20., ingen ultra-boss. Mellemrum sigter automatisk på nærmeste robot', 'Svær: du er halvt så stærk, robotterne dobbelt så stærke. Ingen genladning og ingen gratis byggemateriale – find skud-kasser og trækasser på banen', 'Highscore-tavle for hver sværhedsgrad – plus en Admin-tavle til runder med admin', 'Genladning: kun et rigtigt skud sætter genladningen på pause – man kan lade op, selvom man spammer knappen'] },
   { v: '1.46', d: '12-11-2026', items: ['En ny hemmelig kode giver et diamant-skin i næste runde'] },
@@ -248,7 +249,7 @@ const WEAPONS = {
 const DIFFS = {
   easy:   { name: 'Let',    color: '#6fe39a', playerHp: 2,   playerDmg: 1,   reload: 2, robotHp: 0.5, robotDmg: 0.5, ultra: false, miniEvery: 5, bossEvery: 20, autoReload: true,  autoMats: true, spaceAutoAim: true },
   normal: { name: 'Normal', color: '#c9d3df', playerHp: 1,   playerDmg: 1,   reload: 1, robotHp: 1,   robotDmg: 1,   ultra: true,  miniEvery: 1, bossEvery: 5,  autoReload: true,  autoMats: true },
-  hard:   { name: 'Svær',   color: '#ff6b5b', playerHp: 0.5, playerDmg: 0.5, reload: 1, robotHp: 2,   robotDmg: 2,   ultra: true,  miniEvery: 1, bossEvery: 5,  autoReload: false, autoMats: false }
+  hard:   { name: 'Svær',   color: '#ff6b5b', playerHp: 0.5, playerDmg: 0.5, reload: 1, robotHp: 2,   robotDmg: 2,   ultra: true,  miniEvery: 1, bossEvery: 5,  autoReload: false, autoMats: false, wallsSolid: true }
 };
 // Highscore-tavler: én pr. sværhedsgrad + én for runder med admin
 const BOARDS = { easy: DIFFS.easy, normal: DIFFS.normal, hard: DIFFS.hard, admin: { name: 'Admin', color: '#ffd84a' } };
@@ -630,7 +631,7 @@ function updateUltra(r, dt, d) {
   if (r.stompCd <= 0 && d < r.r + 130) {
     r.stompCd = 4; shake = Math.max(shake, 14); rings.push({ x: r.x, y: r.y, t: 0, small: true }); burst(r.x, r.y, '#ff9db5', 30, 380);
     hitPlayer(500);
-    const ux = (player.x - r.x) / (d || 1), uy = (player.y - r.y) / (d || 1); player.x += ux * 120; player.y += uy * 120; pushOut(player, player.wallBan <= 0);
+    const ux = (player.x - r.x) / (d || 1), uy = (player.y - r.y) / (d || 1); player.x += ux * 120; player.y += uy * 120; pushOut(player, player.wallBan <= 0 && !D.wallsSolid);
   }
   // raser: kalder teleport-robotter til hjælp
   if (enr) {
@@ -1343,7 +1344,7 @@ function updatePlayer(dt) {
   p.x += mx * CFG.playerSpeed * dt; p.y += my * CFG.playerSpeed * dt;
   // Egne vægge: man må stå i dem i 3 sek. – bliver man længere, skubbes man ud og kan ikke gå igennem dem i 20 sek.
   p.wallBan = Math.max(0, (p.wallBan || 0) - dt);
-  pushOut(p, p.wallBan <= 0);
+  pushOut(p, p.wallBan <= 0 && !D.wallsSolid); // Svær: man kan ikke gå igennem sine egne vægge
   const insideWall = !!builtInBox(p.x - p.r, p.y - p.r, p.x + p.r, p.y + p.r, w => circleHitsRect(p.x, p.y, p.r * 0.6, w));
   p.inWallT = insideWall ? (p.inWallT || 0) + dt : 0;
   if (p.inWallT > CFG.insideWallMax) {
@@ -2105,7 +2106,7 @@ function menu() {
   const portrait = TOUCH && VH > VW;
   panel.innerHTML = `<h1>Robotjagt</h1><p>Overlev så mange bølger af robotter som muligt. <span style="color:#93a0b0">· v${VERSION}</span></p>
     <div class="diff">${Object.entries(DIFFS).map(([k, d]) => `<button data-d="${k}" class="${k === difficulty ? 'on' : ''}" style="${k === difficulty ? 'border-color:' + d.color : ''}">${d.name}</button>`).join('')}</div>
-    <div class="diff-info">${{ easy: 'Dobbelt liv, dobbelt så hurtig genladning, robotterne er halvt så stærke. Miniboss hver 5. bølge, boss hver 20., ingen ultra-boss. Mellemrum sigter automatisk.', normal: 'Det almindelige spil.', hard: 'Du er halvt så stærk, robotterne dobbelt så stærke. Ingen genladning – find skud og træ på banen.' }[difficulty]}</div>
+    <div class="diff-info">${{ easy: 'Dobbelt liv, dobbelt så hurtig genladning, robotterne er halvt så stærke. Miniboss hver 5. bølge, boss hver 20., ingen ultra-boss. Mellemrum sigter automatisk.', normal: 'Det almindelige spil.', hard: 'Du er halvt så stærk, robotterne dobbelt så stærke. Ingen genladning – find skud og træ på banen. Du kan ikke gå gennem dine egne vægge.' }[difficulty]}</div>
     <div class="menu-btns"><button id="go">Start spil</button><button class="sec" id="admstart">⚙ Admin-tilstand</button><button class="sec" id="hsnow">🏆 Highscore</button><button class="sec" id="codesnow">🔑 Koder</button><button class="sec" id="lognow">Ændringslog</button></div>${pendingSkin ? (pendingSkin === 'diamond' ? '<p class="tip" style="color:#9fefff">💎 Diamant-skin er klar til næste runde</p>' : pendingSkin === 'rainbow' ? '<p class="tip" style="color:#8fd0ff">🌈 Regnbue-skin er klar til næste runde</p>' : '<p class="tip" style="color:#ffd84a">✨ Guld-skin er klar til næste runde</p>') : ''}
     ${portrait ? '<p class="tip">📱 Spillet er bedst, når du vender telefonen på langs.</p>' : ''}
     ${TOUCH && !canFullscreen() ? '<p class="tip">Tip: Del → "Føj til hjemmeskærm" giver fuld skærm.</p>' : ''}
