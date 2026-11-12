@@ -75,6 +75,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.36', d: '12-11-2026', items: ['Flammekasteren (dit våben) gør 3 gange så meget skade'] },
   { v: '1.35', d: '12-11-2026', items: ['Røde hjerter har ikke længere et loft – du kan samle så meget max liv, du vil'] },
   { v: '1.34', d: '12-11-2026', items: ['Nyt våben: flammekaster – brænder alle robotter i en kegle foran dig. Den er 3 gange sjældnere end de andre våben', 'Koder: ny knap på startskærmen, hvor man kan skrive koder. En hemmelig kode giver guld-skin i næste runde', 'Man kan højst stå inde i sine egne vægge i 3 sekunder – ellers bliver man smidt ud og kan ikke gå gennem vægge i 20 sekunder', 'Usynlige robotter bliver synlige i 2 sekunder hvert 5. sekund'] },
   { v: '1.33', d: '12-11-2026', items: ['Alle våben er 3 gange sjældnere: det første kommer efter 1½ minut, derefter cirka hvert 2.–3. minut, og bossen taber kun et våben i 1 ud af 3 tilfælde'] },
@@ -206,7 +207,7 @@ const WEAPONS = {
   sniper:  { name: 'Sniper',  color: '#6fd3ff', dmg: 4,    gap: 0.9,  reload: 2.4, cost: 1,    pellets: 1,  spread: 0,    range: 99,   speed: 1900, superGain: 2 },
   rifle:   { name: 'Rifle',   color: '#9be36f', dmg: 1.3,  gap: 0.11, reload: 0.7, cost: 1,    pellets: 1,  spread: 0.02, range: 1.25, speed: 1100, superGain: 1 },
   // Flammekaster: brænder alle robotter i en kegle foran dig. 3 gange sjældnere end de andre våben.
-  flamer:  { name: 'Flammekaster', short: 'FLAMME', color: '#ff6a2a', dmg: 0.12, gap: 0.05, reload: 1, cost: 0.1, pellets: 0, spread: 0.35, range: 0.34, speed: 0, superGain: 0.1, auto: true, flame: true }
+  flamer:  { name: 'Flammekaster', short: 'FLAMME', color: '#ff6a2a', dmg: 0.36, gap: 0.05, reload: 1, cost: 0.1, pellets: 0, spread: 0.35, range: 0.34, speed: 0, superGain: 0.1, auto: true, flame: true }
 };
 
 // ---------- Hjælpere ----------
