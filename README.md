@@ -15,6 +15,7 @@ Spillet virker både på computer og telefon. På telefonen går det i fuld skæ
 | Sigt selv | Mus + venstreklik | Træk med højre tommel og slip |
 | Byg en væg | Højreklik (hold og træk for flere) | BYG-knappen, og tryk på banen |
 | Super-missil | Q | SUPER-knappen |
+| Kast granat | G (hen hvor musen peger) | GRANAT-knappen |
 | Pause | P eller Esc | Pauseknappen |
 | Admin-panel (kræver kode) | E | Pauseknappen → Admin |
 
@@ -29,6 +30,7 @@ Spillet virker både på computer og telefon. På telefonen går det i fuld skæ
 - ☠ Ultra-boss hver 20. bølge med meteorer, plasmakugler, flammekastere, save og missiler
 - Sjældne våben at samle op (cirka hvert 2.–3. minut): shotgun, minigun, sniper, rifle og den meget sjældne flammekaster
 - Super: et målsøgende missil efter hver 10. træffer
+- Granater (sjældne, 3 ad gangen): 10.000 skade i et kæmpe område
 - Powerups: helbredelse, dobbelt skade, super, hurtig genladning, +500 max liv, +1 skud, +25 % skade og +25 % skudhastighed
 - Highscore-tavle med top 10 (fælles for alle på keha.dk/robotjagt). Runder hvor admin-panelet er brugt, kommer ikke på
 - Admin-panel med kode
