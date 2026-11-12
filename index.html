@@ -50,6 +50,8 @@
   .hs-form input{flex:1}
   .hs-form button{margin:0}
   .muted{color:#93a0b0;font-size:13px}
+  .rbw{background:linear-gradient(90deg,#ff4d4d,#ffa64d,#ffe14d,#4dff88,#4dd2ff,#7a5cff,#ff4dd8,#ff4d4d);background-size:200% auto;-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:800;animation:rbw 2s linear infinite}
+  @keyframes rbw{to{background-position:200% center}}
   .hs-h{font-weight:800;font-size:15px;text-align:left;margin:12px 0 0;color:#ffd84a}
   @media (max-height:500px){.stats{margin:8px 0 2px}.stat{padding:6px 12px}.stat .n{font-size:20px}table.hs{font-size:13px;margin:4px 0}table.hs td{padding:3px 6px}.panel h1{margin-bottom:0}}
   @media (max-width:600px),(max-height:500px){.panel{padding:18px 18px}.panel h1{font-size:26px}.panel ul{font-size:14px}}
@@ -2187,6 +2189,7 @@ let lastRekord = false;
 const HS_SHARED = /(^|\.)keha\.dk$/.test(location.hostname);
 const HS_URL = '/wp-json/robotjagt/v1/scores';
 const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const SPECIAL_NAMES = new Set([2882689427, 624971967]);
 const hsSort = (a, b) => (b.kills - a.kills) || (b.wave - a.wave);
 // Én tavle pr. sværhedsgrad. Normal bruger den oprindelige tavle.
 const hsKey = m => m === 'normal' ? 'robotjagt_scores' : 'robotjagt_scores_' + m;
@@ -2224,7 +2227,7 @@ function hsTable(list, mark, m) {
   if (list === null) return h + '<p class="muted">Highscore-tavlen kunne ikke hentes lige nu.</p>';
   if (!list.length) return h + '<p class="muted">Tavlen er tom – bliv den første!</p>';
   return h + '<table class="hs"><tr><th>#</th><th>Navn</th><th class="n">Nedlagt</th><th class="n">Bølge</th></tr>' +
-    list.map((e, i) => `<tr class="${mark && e.name === mark.name && e.kills === mark.kills && e.wave === mark.wave ? 'me' : ''}"><td>${i + 1}</td><td>${esc(e.name)}</td><td class="n">${e.kills}</td><td class="n">${e.wave}</td></tr>`).join('') + '</table>';
+    list.map((e, i) => `<tr class="${mark && e.name === mark.name && e.kills === mark.kills && e.wave === mark.wave ? 'me' : ''}"><td>${i + 1}</td><td>${SPECIAL_NAMES.has(codeHash(String(e.name))) ? `<span class="rbw">${esc(e.name)}</span>` : esc(e.name)}</td><td class="n">${e.kills}</td><td class="n">${e.wave}</td></tr>`).join('') + '</table>';
 }
 const hsWhere = () => HS_SHARED ? 'Fælles tavle for alle på keha.dk' : 'Kun denne enhed – den fælles tavle er på <a href="https://keha.dk/robotjagt/" target="_blank" rel="noopener" style="color:#8fd0ff">keha.dk/robotjagt</a>';
 
