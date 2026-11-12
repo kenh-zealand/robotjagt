@@ -75,6 +75,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.45', d: '12-11-2026', items: ['Tryk E igen for at lukke admin-panelet'] },
   { v: '1.44', d: '12-11-2026', items: ['Mellemrum skyder nu der, hvor du sigter med musen – ikke automatisk på den nærmeste robot'] },
   { v: '1.43', d: '12-11-2026', items: ['Granater kastes nu med F (før G)'] },
   { v: '1.42', d: '12-11-2026', items: ['Flammekasteren gør 3 gange så meget skade og bruger 3 gange mindre ammo'] },
@@ -727,6 +728,13 @@ const TOUCH = (window.matchMedia && matchMedia('(pointer: coarse)').matches) || 
 let isTouch = TOUCH;
 
 addEventListener('keydown', e => {
+  if (state === 'admin' && !(e.target && e.target.tagName === 'INPUT') && e.key && e.key.length === 1) {
+    const nowMs = performance.now(), quiet = nowMs - lastAdminKeyAt > 600; lastAdminKeyAt = nowMs;
+    if (!adminMode && adminUnlocked) secretKey(e.key);
+    // E lukker admin-panelet – men kun hvis man ikke lige har tastet andre bogstaver (så man kan skrive ord med e)
+    if (e.code === 'KeyE' && !e.repeat && quiet) { closeAdmin(); return; }
+    return;
+  }
   if (state === 'admin' && !adminMode && adminUnlocked && e.key && e.key.length === 1) secretKey(e.key);
   if (e.target && e.target.tagName === 'INPUT') return;
   if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) e.preventDefault();
@@ -2207,7 +2215,7 @@ function openCodes() {
     inp.value = ''; inp.focus();
   };
 }
-let adminFree = false, secretBuf = '';
+let adminFree = false, secretBuf = '', lastAdminKeyAt = -1e9;
 function secretKey(k) {
   secretBuf = (secretBuf + k.toLowerCase()).slice(-13);
   if (secretBuf.length === 13 && codeHash(secretBuf) === 3455178964) {
@@ -2217,6 +2225,7 @@ function secretKey(k) {
 }
 function codeOk(t) { let h = 5381; for (const c of t.trim().toLowerCase()) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0; return h === 624971967; }
 function openAdmin() {
+  lastAdminKeyAt = performance.now(); // den E, der åbnede panelet, skal ikke straks lukke det igen
   if (state === 'play' || state === 'pause') adminFrom = state;
   state = 'admin'; mouse.down = false; keys.clear();
   overlay.classList.remove('hidden');
