@@ -75,6 +75,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.37', d: '12-11-2026', items: ['Flammekasterens flamme ser nu lige så lang ud, som den rammer'] },
   { v: '1.36', d: '12-11-2026', items: ['Flammekasteren (dit våben) gør 3 gange så meget skade'] },
   { v: '1.35', d: '12-11-2026', items: ['Røde hjerter har ikke længere et loft – du kan samle så meget max liv, du vil'] },
   { v: '1.34', d: '12-11-2026', items: ['Nyt våben: flammekaster – brænder alle robotter i en kegle foran dig. Den er 3 gange sjældnere end de andre våben', 'Koder: ny knap på startskærmen, hvor man kan skrive koder. En hemmelig kode giver guld-skin i næste runde', 'Man kan højst stå inde i sine egne vægge i 3 sekunder – ellers bliver man smidt ud og kan ikke gå gennem vægge i 20 sekunder', 'Usynlige robotter bliver synlige i 2 sekunder hvert 5. sekund'] },
@@ -634,10 +635,11 @@ function tryShoot(angle) {
   const dmg = CFG.shotDamage * W.dmg * p.dmgMul * (buffs.damage > 0 ? 2 : 1);
   if (W.flame) { // flammekaster: skade på alle robotter i keglen foran dig
     const range = cheats.range ? 900 : CFG.bulletRange * W.range;
-    for (let k = 0; k < 3; k++) {
-      const a = angle + rand(-W.spread * 0.8, W.spread * 0.8), v = range * rand(1.9, 2.3), life = rand(0.35, 0.5);
+    // flammerne skal række lige så langt som skaden (med drag 0.97 og ~0,55 sek. liv flyver de ca. 0,35 × fart)
+    for (let k = 0; k < 5; k++) {
+      const a = angle + rand(-W.spread * 0.85, W.spread * 0.85), v = range * rand(2.6, 3.0), life = rand(0.5, 0.6);
       particles.push({ x: p.x + Math.cos(angle) * 30, y: p.y + Math.sin(angle) * 30, vx: Math.cos(a) * v, vy: Math.sin(a) * v,
-        life, max: life, color: ['#ffdf6b', '#ff9d3b', '#ff5a2a'][k], size: rand(4, 8), drag: 0.93, grow: true });
+        life, max: life, color: ['#ffdf6b', '#ffb340', '#ff9d3b', '#ff7a2a', '#ff5a2a'][k], size: rand(5, 9), drag: 0.97, grow: true });
     }
     for (const r of robots.slice()) {
       const d = Math.hypot(r.x - p.x, r.y - p.y); if (d > range + r.r) continue;
