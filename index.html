@@ -2437,7 +2437,7 @@ function secretKey(k) {
     if (state === 'admin') adminControls(); // viser ✓ ved overskriften resten af runden
   }
 }
-function codeOk(t) { let h = 5381; for (const c of t.trim().toLowerCase()) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0; return h === 624971967; }
+function codeOk(t) { let h = 5381; for (const c of t.trim().toLowerCase()) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0; return h === 3087473219; }
 function openAdmin() {
   lastAdminKeyAt = performance.now(); // den E, der åbnede panelet, skal ikke straks lukke det igen
   if (state === 'play' || state === 'pause') adminFrom = state;
