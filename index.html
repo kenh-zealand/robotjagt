@@ -81,6 +81,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.53', d: '12-11-2026', items: ['Regnbue-skinnet er gjort meget flottere: holografisk regnbue i to lag, lysende glorie, glans, kredsende lys og et regnbuespor, når du løber', 'Med regnbue-skin bliver dit våben også regnbuefarvet'] },
   { v: '1.52', d: '12-11-2026', items: ['Boss, miniboss og ultra-boss smadrer dine vægge, så snart de rører dem', 'Bygger du dig inde i en kasse, finder alle robotter dig og tager den hurtigste vej – også gennem væggene, hvis det går hurtigere end en lang omvej'] },
   { v: '1.51', d: '12-11-2026', items: ['De første 3 minibosser i en runde har det gamle liv (2500 i stedet for 7500)'] },
   { v: '1.50', d: '12-11-2026', items: ['Admin: vælg selv antal nedlagte robotter (0–999.999)'] },
@@ -1264,15 +1265,19 @@ function updateWeaponDrops(dt) {
     }
   }
 }
-function drawGun(type, scale) {
+function drawGun(type, scale, rbHue) {
   // tegnet med pibe mod højre, centreret omkring (0,0) i spillerens hånd
   ctx.save(); ctx.scale(scale, scale);
-  if (type === 'shotgun') { ctx.fillStyle = '#6b4a2a'; ctx.fillRect(2, -5, 10, 10); ctx.fillStyle = '#2a2f38'; ctx.fillRect(10, -6, 24, 5); ctx.fillRect(10, 1, 24, 5); }
-  else if (type === 'minigun') { ctx.fillStyle = '#3a3f48'; ctx.fillRect(4, -9, 18, 18); ctx.fillStyle = '#2a2f38'; for (const oy of [-7, -2, 3]) ctx.fillRect(20, oy, 18, 4); ctx.fillStyle = '#ffd84a'; ctx.fillRect(8, -3, 6, 6); }
-  else if (type === 'sniper') { ctx.fillStyle = '#2a2f38'; ctx.fillRect(4, -3, 46, 6); ctx.fillStyle = '#6fd3ff'; ctx.fillRect(14, -9, 14, 5); ctx.fillStyle = '#4a5260'; ctx.fillRect(46, -4, 6, 8); }
-  else if (type === 'rifle') { ctx.fillStyle = '#2a2f38'; ctx.fillRect(6, -4, 34, 8); ctx.fillStyle = '#9be36f'; ctx.fillRect(16, 4, 7, 8); ctx.fillStyle = '#4a5260'; ctx.fillRect(36, -5, 6, 10); }
-  else if (type === 'flamer') { ctx.fillStyle = '#b8322a'; circle(6, 0, 7); ctx.fill(); ctx.fillStyle = '#2a2f38'; ctx.fillRect(10, -4, 22, 8); ctx.fillStyle = '#ff6a2a'; ctx.fillRect(30, -6, 6, 12); }
-  else { ctx.fillStyle = '#2a2f38'; ctx.fillRect(8, -5, 26, 10); ctx.fillStyle = '#4a5260'; ctx.fillRect(26, -6, 8, 12); }
+  // regnbue-skin: hele våbnet får en regnbue, der flyder langs piben
+  let rg = null;
+  if (rbHue != null) { rg = ctx.createLinearGradient(0, -10, 52, 10); for (let k = 0; k <= 6; k++) rg.addColorStop(k / 6, `hsl(${(rbHue + k * 55) % 360},95%,${k % 2 ? 62 : 52}%)`); }
+  const col = c => rg || c;
+  if (type === 'shotgun') { ctx.fillStyle = col('#6b4a2a'); ctx.fillRect(2, -5, 10, 10); ctx.fillStyle = col('#2a2f38'); ctx.fillRect(10, -6, 24, 5); ctx.fillRect(10, 1, 24, 5); }
+  else if (type === 'minigun') { ctx.fillStyle = col('#3a3f48'); ctx.fillRect(4, -9, 18, 18); ctx.fillStyle = col('#2a2f38'); for (const oy of [-7, -2, 3]) ctx.fillRect(20, oy, 18, 4); ctx.fillStyle = col('#ffd84a'); ctx.fillRect(8, -3, 6, 6); }
+  else if (type === 'sniper') { ctx.fillStyle = col('#2a2f38'); ctx.fillRect(4, -3, 46, 6); ctx.fillStyle = col('#6fd3ff'); ctx.fillRect(14, -9, 14, 5); ctx.fillStyle = col('#4a5260'); ctx.fillRect(46, -4, 6, 8); }
+  else if (type === 'rifle') { ctx.fillStyle = col('#2a2f38'); ctx.fillRect(6, -4, 34, 8); ctx.fillStyle = col('#9be36f'); ctx.fillRect(16, 4, 7, 8); ctx.fillStyle = col('#4a5260'); ctx.fillRect(36, -5, 6, 10); }
+  else if (type === 'flamer') { ctx.fillStyle = col('#b8322a'); circle(6, 0, 7); ctx.fill(); ctx.fillStyle = col('#2a2f38'); ctx.fillRect(10, -4, 22, 8); ctx.fillStyle = col('#ff6a2a'); ctx.fillRect(30, -6, 6, 12); }
+  else { ctx.fillStyle = col('#2a2f38'); ctx.fillRect(8, -5, 26, 10); ctx.fillStyle = col('#4a5260'); ctx.fillRect(26, -6, 8, 12); }
   ctx.restore();
 }
 
@@ -1364,6 +1369,11 @@ function updatePlayer(dt) {
   }
   const ml = Math.hypot(mx, my); if (ml > 1) { mx /= ml; my /= ml; }
   p.vx = mx * CFG.playerSpeed; p.vy = my * CFG.playerSpeed;
+  if (p.skin === 'rainbow' && (mx || my) && Math.random() < 0.7) { // regnbue-spor efter dig
+    const life = rand(0.35, 0.6);
+    particles.push({ x: p.x - mx * 14 + rand(-6, 6), y: p.y - my * 14 + rand(-6, 6), vx: rand(-20, 20), vy: rand(-20, 20), life, max: life,
+      color: `hsl(${(time * 160 + rand(0, 120)) % 360},100%,65%)`, size: rand(2.5, 4.5), drag: 0.9 });
+  }
   p.x += mx * CFG.playerSpeed * dt; p.y += my * CFG.playerSpeed * dt;
   // Egne vægge: man må stå i dem i 3 sek. – bliver man længere, skubbes man ud og kan ikke gå igennem dem i 20 sek.
   p.wallBan = Math.max(0, (p.wallBan || 0) - dt);
@@ -1907,7 +1917,7 @@ function drawPlayer() {
   ctx.globalAlpha = p.hidden ? (p.reveal > 0 ? 0.9 : 0.6) : 1;
   ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(3, 7, p.r, p.r * 0.7, 0, 0, Math.PI * 2); ctx.fill();
   ctx.rotate(p.angle);
-  drawGun(p.weapon, 1);
+  drawGun(p.weapon, 1, p.skin === 'rainbow' && p.flash <= 0 ? (time * 160) % 360 : null);
   const gold = p.skin === 'gold', rainbow = p.skin === 'rainbow';
   if (p.skin === 'diamond' && p.flash <= 0) { // diamant: lyseblå krystal med facetter og glimt
     const g = ctx.createLinearGradient(-p.r, -p.r, p.r, p.r);
@@ -1922,12 +1932,28 @@ function drawPlayer() {
     const sx = Math.cos(sa) * p.r * 0.55, sy = Math.sin(sa) * p.r * 0.55;
     ctx.beginPath(); ctx.moveTo(sx, sy - 6); ctx.lineTo(sx + 2, sy - 2); ctx.lineTo(sx + 6, sy); ctx.lineTo(sx + 2, sy + 2); ctx.lineTo(sx, sy + 6); ctx.lineTo(sx - 2, sy + 2); ctx.lineTo(sx - 6, sy); ctx.lineTo(sx - 2, sy - 2); ctx.closePath(); ctx.fill();
     ctx.globalAlpha = 1;
-  } else if (rainbow && p.flash <= 0) { // animeret regnbue: farverne drejer rundt
-    const hue = (time * 140) % 360, g = ctx.createConicGradient ? ctx.createConicGradient(time * 3, 0, 0) : null;
-    if (g) { for (let k = 0; k <= 6; k++) g.addColorStop(k / 6, `hsl(${(hue + k * 60) % 360},95%,60%)`); ctx.fillStyle = g; } else ctx.fillStyle = `hsl(${hue},95%,60%)`;
-    circle(0, 0, p.r); ctx.fill();
-    ctx.lineWidth = 3; ctx.strokeStyle = `hsl(${(hue + 180) % 360},90%,40%)`; ctx.stroke();
-    ctx.strokeStyle = `hsla(${(hue + 90) % 360},100%,70%,.6)`; ctx.lineWidth = 2; circle(0, 0, p.r + 4 + Math.sin(time * 8) * 1.5); ctx.stroke();
+  } else if (rainbow && p.flash <= 0) { // holografisk regnbue: to lag der drejer hver sin vej, glød, glans og kredsende lys
+    const hue = (time * 160) % 360, hasConic = !!ctx.createConicGradient;
+    const conic = (rot, sat, light) => { const g = ctx.createConicGradient(rot, 0, 0); for (let k = 0; k <= 12; k++) g.addColorStop(k / 12, `hsl(${(hue + k * 30) % 360},${sat}%,${light}%)`); return g; };
+    // lysende glorie der skifter farve
+    ctx.save(); ctx.shadowColor = `hsl(${hue},100%,60%)`; ctx.shadowBlur = 22;
+    circle(0, 0, p.r); ctx.fillStyle = hasConic ? conic(time * 2.5, 100, 58) : `hsl(${hue},100%,58%)`; ctx.fill(); ctx.restore();
+    // inderste lag drejer den anden vej
+    if (hasConic) { ctx.globalAlpha = 0.55; circle(0, 0, p.r * 0.62); ctx.fillStyle = conic(-time * 4, 100, 70); ctx.fill(); ctx.globalAlpha = 1; }
+    // glansskær
+    const sh = ctx.createRadialGradient(-p.r * 0.35, -p.r * 0.4, 1, -p.r * 0.2, -p.r * 0.2, p.r);
+    sh.addColorStop(0, 'rgba(255,255,255,.85)'); sh.addColorStop(0.35, 'rgba(255,255,255,.18)'); sh.addColorStop(1, 'rgba(255,255,255,0)');
+    circle(0, 0, p.r); ctx.fillStyle = sh; ctx.fill();
+    ctx.lineWidth = 2.5; ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.stroke();
+    // regnbue-ring der pulserer
+    ctx.lineWidth = 3; ctx.strokeStyle = hasConic ? conic(-time * 3, 100, 62) : `hsl(${(hue + 120) % 360},100%,62%)`;
+    circle(0, 0, p.r + 5 + Math.sin(time * 6) * 1.5); ctx.stroke();
+    // tre lysprikker der kredser rundt
+    for (let k = 0; k < 3; k++) {
+      const a = time * 4 + k * Math.PI * 2 / 3, rr2 = p.r + 10;
+      ctx.save(); ctx.shadowColor = `hsl(${(hue + k * 120) % 360},100%,65%)`; ctx.shadowBlur = 10;
+      circle(Math.cos(a) * rr2, Math.sin(a) * rr2, 3); ctx.fillStyle = `hsl(${(hue + k * 120) % 360},100%,75%)`; ctx.fill(); ctx.restore();
+    }
   } else {
   circle(0, 0, p.r); ctx.fillStyle = p.flash > 0 ? '#ff7b7b' : gold ? '#f2c94c' : '#3d8bff'; ctx.fill();
   ctx.lineWidth = 3; ctx.strokeStyle = gold ? '#9a7410' : '#1d4f99'; ctx.stroke();
