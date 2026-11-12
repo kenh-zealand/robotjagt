@@ -26,7 +26,7 @@ Spillet virker både på computer og telefon. På telefonen går det i fuld skæ
 - Byg vægge: 1 byggemateriale hvert 3. sekund. Du kan gå og skyde igennem dine egne vægge, robotterne kan ikke – de går udenom eller skyder dem i stykker
 - Robotter: skyderobot, savrobot, flammerobot, teleport-robot og usynlig robot – de bliver stærkere hver bølge
 - Miniboss i hver bølge og boss hver 5. bølge, med flere angreb jo længere du kommer
-- Sjældne våben at samle op: shotgun, minigun, sniper og rifle
+- Sjældne våben at samle op (cirka hvert 2.–3. minut): shotgun, minigun, sniper og rifle
 - Super: et målsøgende missil efter hver 10. træffer
 - Powerups: helbredelse, dobbelt skade, super, hurtig genladning, +500 max liv, +1 skud, +25 % skade og +25 % skudhastighed
 - Highscore-tavle med top 10 (fælles for alle på keha.dk/robotjagt). Runder hvor admin-panelet er brugt, kommer ikke på

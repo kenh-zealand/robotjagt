@@ -75,6 +75,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.33', d: '12-11-2026', items: ['Alle våben er 3 gange sjældnere: det første kommer efter 1½ minut, derefter cirka hvert 2.–3. minut, og bossen taber kun et våben i 1 ud af 3 tilfælde'] },
   { v: '1.32', d: '12-11-2026', items: ['Spillet har fået ny adresse: keha.dk/robotjagt (den gamle adresse keha.dk/robotspil sender automatisk videre)'] },
   { v: '1.31', d: '11-11-2026', items: ['Rettet: spillet kunne fryse ("Siden svarer ikke") i op til 12 sekunder, når der var bygget mange vægge. Årsagen var en regnefejl i robotternes vejfinding, som fik den til at regne de samme felter om igen og igen', 'Vægge slås nu op i et gitter i stedet for at blive gennemgået én for én', 'Mindre arbejde for computeren i hvert billede (ingen unødvendige kopier af lister)', 'Loft over antal effekter, så telefoner ikke går i stå', 'En fejl i ét billede stopper ikke længere hele spillet – det kører videre'] },
   { v: '1.30', d: '11-11-2026', items: ['Man kan nu skifte tilbage til admin-tilstand fra et normalt spil: knap i pause-menuen og ved game over', 'Menu-knap i pause-menuen'] },
@@ -169,8 +170,9 @@ const CFG = {
   buildRange: 340,      // hvor langt væk man kan bygge
   wallPathCost: 30,     // hvor meget robotter hellere vil gå udenom end skyde sig igennem
   hearRange: 650,       // robotter hører dig inden for denne afstand (ikke når du er i en busk)
-  weaponFirst: 30,      // første våben dukker op efter 30 sek.
-  weaponEvery: [40, 55],// derefter et sjældent våben hvert 40–55 sek.
+  weaponFirst: 90,      // første våben dukker op efter 90 sek. (3 gange sjældnere fra v1.33)
+  weaponEvery: [120, 165],// derefter et sjældent våben hvert 2–2¾ minut
+  bossWeaponChance: 1 / 3, // bossen taber et våben i 1 ud af 3 tilfælde
   maxParticles: 900,    // højst så mange effekt-partikler på én gang
   maxPowerups: 4,       // højst så mange powerups på banen ad gangen
   healAmount: 1200,     // helbredelse: +1200 liv
@@ -659,7 +661,7 @@ function damageRobot(r, dmg, x, y) {
       shake = 22; banner('BOSS BESEJRET!'); rings.push({ x: r.x, y: r.y, t: 0 });
       for (let k = 0; k < 4; k++) burst(r.x + rand(-40, 40), r.y + rand(-40, 40), ['#ff9d3b', '#ffdf6b', '#8b96a5', '#ff5a2a'][k], 35, 420);
       powerups.push({ x: r.x, y: r.y, type: 'heal', t: 0 }); powerups.push({ x: r.x + 60, y: r.y, type: 'ammo', t: 0 });
-      spawnWeaponDrop(null, r.x - 60, r.y); // bossen taber et sjældent våben
+      if (Math.random() < CFG.bossWeaponChance) spawnWeaponDrop(null, r.x - 60, r.y); // bossen taber nogle gange et sjældent våben
     }
     if (r.type === 'mini') {
       shake = 14; burst(r.x, r.y, '#4ab8ff', 25, 300);
@@ -1661,7 +1663,7 @@ ${controls}
         <br>• <b style="color:#b46bff">⚔ Lilla sværd</b> – <b>+25 % skade for altid</b> (kan samles flere gange)
         <br>• <b style="color:#2fe0d0">» Turkis lyn</b> – <b>+25 % skudhastighed for altid</b> (hurtigere genladning, kan samles flere gange)
         <br>• <b style="color:#3ee06a">▲ Grøn krystal</b> – giver dig <b>1 skud ekstra</b> for resten af spillet (op til 8)</li>
-      <li><b>Sjældne våben</b> dukker op på banen (cirka hvert 45. sekund, og bossen taber et). Gå hen over dem for at samle dem op – du beholder dem alle og kan skifte mellem dem:
+      <li><b>Sjældne våben</b> dukker op på banen (cirka hvert 2.–3. minut, og bossen taber nogle gange et). Gå hen over dem for at samle dem op – du beholder dem alle og kan skifte mellem dem:
         <br>• <b style="color:#ff9a4a">Shotgun</b> – 10 hagl på én gang, men skyder og lader langsomt
         <br>• <b style="color:#ffd84a">Minigun</b> – skyder mega hurtigt${TOUCH ? ' (hold højre tommel trukket ud)' : ' (hold knappen nede)'}
         <br>• <b style="color:#6fd3ff">Sniper</b> – uendelig rækkevidde og 4× skade, men skyder langsomt
