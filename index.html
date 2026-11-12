@@ -81,6 +81,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.51', d: '12-11-2026', items: ['De første 3 minibosser i en runde har det gamle liv (2500 i stedet for 7500)'] },
   { v: '1.50', d: '12-11-2026', items: ['Admin: vælg selv antal nedlagte robotter (0–999.999)'] },
   { v: '1.49', d: '12-11-2026', items: ['Svær: du kan ikke længere gå igennem dine egne vægge'] },
   { v: '1.48', d: '12-11-2026', items: ['Flammekasteren giver efterbrand: robotter du rammer, brænder videre i 3 sekunder (300 skade pr. sekund, plus dine skade-opgraderinger). Robotternes egne flammer giver ikke efterbrand'] },
@@ -174,6 +175,8 @@ const CFG = {
   bossFlameRange: 270,
   bossFlameDps: 300,    // pr. flammekaster (halveret i v1.23)
   miniHp: 7500,         // miniboss i hver bølge – 3 gange mere liv (v1.38)
+  miniHpEarly: 2500,    // de første 3 minibosser i en runde har det gamle liv
+  miniEarlyCount: 3,
   miniSpeed: 90,
   miniFire: 1.2,
   hpPerWave: 0.15,      // robotter får +15 % liv for hver bølge
@@ -312,6 +315,7 @@ for (const b of bushes) {
 }
 
 let builtWalls = []; // vægge spilleren har bygget
+let minisSpawned = 0;
 let weaponDrops = [], weaponTimer = 0;
 // Byggede vægge slås op i feltgitteret (builtAt), så kun de få vægge tæt på tjekkes.
 // Før blev ALLE vægge gennemgået hver gang – med mange vægge kunne spillet fryse i op til 12 sekunder.
@@ -538,6 +542,7 @@ function reset() {
   robots = []; bullets = []; particles = []; missiles = []; rings = []; superCharge = 0;
   powerups = []; popups = []; powerTimer = 3; ammoTimer = 12; maxHpTimer = 20; permDmgTimer = 22; permRateTimer = 36; buffs = { damage: 0, reload: 0 };
   wave = 0; kills = 0; time = 0; waveTimer = 1.2; shake = 0;
+  minisSpawned = 0;
   weaponDrops = []; weaponTimer = CFG.weaponFirst; meteors = []; supplies = []; supplyAmmoT = 1; supplyWoodT = 2; grenadeDrops = []; grenadeTimer = CFG.grenadeFirst; grenadesFlying = [];
   builtWalls = []; builtAt.fill(null); materials = CFG.startMaterials; matTimer = 0; buildMode = false; flowDirty = true; flowTimer = 0;
 }
@@ -568,7 +573,8 @@ function spawnMini(hm) {
     do { x = rand(80, WORLD.w - 80); y = rand(80, WORLD.h - 80); tries++; }
     while (tries < 400 && (Math.hypot(x - player.x, y - player.y) < 700 || hitsWall(x, y, 40)));
     const kit = miniKit(wave);
-    robots.push({ x, y, type: 'mini', kit, ringCd: 3, homingCd: 4, dashCd: 2, dashT: 0, r: 32, hp: Math.round(CFG.miniHp * hm), maxHp: Math.round(CFG.miniHp * hm), speedMul: 0.8, sawCd: 0, flaming: false, state: 'wander',
+    const baseHp = minisSpawned++ < CFG.miniEarlyCount ? CFG.miniHpEarly : CFG.miniHp;
+    robots.push({ x, y, type: 'mini', kit, ringCd: 3, homingCd: 4, dashCd: 2, dashT: 0, r: 32, hp: Math.round(baseHp * hm), maxHp: Math.round(baseHp * hm), speedMul: 0.8, sawCd: 0, flaming: false, state: 'wander',
       fireCd: 1.5, angle: rand(0, 6.28), target: null, wanderT: 0, lastSeen: null, searchT: 0, lookT: 0, flash: 0, alertT: 0,
       strafe: 1, strafeT: 2 });
 }
@@ -2124,7 +2130,7 @@ ${controls}
         <br>• <b>Flammerobot</b> (orange) – brænder dig på kort afstand
         <br>• <b>Teleport-robot</b> (lilla, fra bølge 3) – blinker og hopper rundt på banen, og skyder lige efter et hop
         <br>• <b>Usynlig robot</b> (fra bølge 4) – du kan kun se dens lyseblå skud – men hvert 5. sekund bliver den synlig i 2 sekunder. Den automatiske sigte rammer den ikke – sigt selv ${TOUCH ? 'ved at trække med højre tommel' : 'med musen'}</li>
-      <li><b>Miniboss</b> i hver bølge (blå): 7500 liv, pistoler og en sav foran. Den taber en powerup, når den dør. Den får flere angreb hver bølge: flere pistoler, flammekaster (bølge 4), ring-skud (bølge 6) og målsøgende raket (bølge 8).</li>
+      <li><b>Miniboss</b> i hver bølge (blå): 7500 liv (de første 3 har 2500), pistoler og en sav foran. Den taber en powerup, når den dør. Den får flere angreb hver bølge: flere pistoler, flammekaster (bølge 4), ring-skud (bølge 6) og målsøgende raket (bølge 8).</li>
       <li><b>☠ Ultra-boss</b> hver 20. bølge: 5 gange bossens liv, 3 flammekastere, 2 save, målsøgende missiler, plasmakugler der brænder gennem vægge, og meteorer – flyt dig væk fra de røde cirkler! Under halvt liv går den amok og kalder hjælp.</li>
       <li><b>Boss</b> hver 5. bølge: 25.000 liv, 2 flammekastere og 3 pistoler. Den er langsom, og dens skud er langsomme – så du kan undvige. Den skyder også i en ring rundt om sig, og fra bølge 10 får den målsøgende raketter og en chokbølge. Bossen har altid flere angreb end minibossen.</li>
       <li><b>Powerups</b> dukker op rundt på banen – gå hen over dem:
