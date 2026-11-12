@@ -75,6 +75,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.38', d: '12-11-2026', items: ['☠ Ultra-boss hver 20. bølge: 5 gange bossens liv, meteorer, plasmakugler, 3 flammekastere, 2 save og målsøgende missiler. Under halvt liv går den amok, bliver hurtigere og kalder teleport-robotter', 'Bossen har 5 gange så meget liv, og minibossen 3 gange', 'Man kan have op til 50 byggematerialer', 'Admin: gå til bølge 1–999 og lav en ultra-boss', 'En ny hemmelig kode giver et animeret regnbue-skin i næste runde'] },
   { v: '1.37', d: '12-11-2026', items: ['Flammekasterens flamme ser nu lige så lang ud, som den rammer'] },
   { v: '1.36', d: '12-11-2026', items: ['Flammekasteren (dit våben) gør 3 gange så meget skade'] },
   { v: '1.35', d: '12-11-2026', items: ['Røde hjerter har ikke længere et loft – du kan samle så meget max liv, du vil'] },
@@ -148,14 +149,14 @@ const CFG = {
   missileTurn: 5.5,     // hvor skarpt missilet kan dreje (radianer/sek.)
   missileRadius: 220,   // ca. 5 robotter bred
   bossEvery: 5,         // boss hver 5. bølge
-  bossHp: 5000,
+  bossHp: 25000,        // 5 gange mere liv (v1.38)
   bossSpeed: 55,        // langsom
   bossBulletSpeed: 300, // langsomme skud
   bossDamage: 300,      // pr. kugle (3 pistoler)
   bossFire: 1.5,        // sek. mellem salverne
   bossFlameRange: 270,
   bossFlameDps: 300,    // pr. flammekaster (halveret i v1.23)
-  miniHp: 2500,         // miniboss i hver bølge
+  miniHp: 7500,         // miniboss i hver bølge – 3 gange mere liv (v1.38)
   miniSpeed: 90,
   miniFire: 1.2,
   hpPerWave: 0.15,      // robotter får +15 % liv for hver bølge
@@ -168,7 +169,7 @@ const CFG = {
   permRateBonus: 0.25,  // turkis lyn: +25 % skudhastighed for altid
   permRateEvery: 30,    // sekunder mellem turkise lyn
   materialEvery: 3,     // et byggemateriale hvert 3. sekund
-  maxMaterials: 30,
+  maxMaterials: 50,
   startMaterials: 3,
   wallHp: 1500,         // liv pr. bygget væg
   buildRange: 340,      // hvor langt væk man kan bygge
@@ -180,6 +181,14 @@ const CFG = {
   maxParticles: 900,    // højst så mange effekt-partikler på én gang
   insideWallMax: 3,     // så længe man må stå inde i sine egne vægge
   wallBanTime: 20,      // derefter kan man ikke gå gennem vægge i 20 sek.
+  ultraEvery: 20,       // ultra-boss hver 20. bølge
+  ultraHpMul: 5,        // 5 gange bossens liv
+  ultraSpeed: 42,
+  ultraSawDamage: 220,  // pr. hug fra hver af de 2 save
+  ultraFlameRange: 300,
+  ultraPlasmaDamage: 380,
+  ultraMeteorDamage: 450,
+  ultraMeteorRadius: 85,
   maxPowerups: 4,       // højst så mange powerups på banen ad gangen
   healAmount: 1200,     // helbredelse: +1200 liv
   buffTime: 10,         // skade- og genladnings-powerup varer 10 sek.
@@ -491,7 +500,7 @@ function reset() {
   robots = []; bullets = []; particles = []; missiles = []; rings = []; superCharge = 0;
   powerups = []; popups = []; powerTimer = 3; ammoTimer = 12; maxHpTimer = 20; permDmgTimer = 22; permRateTimer = 36; buffs = { damage: 0, reload: 0 };
   wave = 0; kills = 0; time = 0; waveTimer = 1.2; shake = 0;
-  weaponDrops = []; weaponTimer = CFG.weaponFirst;
+  weaponDrops = []; weaponTimer = CFG.weaponFirst; meteors = [];
   builtWalls = []; builtAt.fill(null); materials = CFG.startMaterials; matTimer = 0; buildMode = false; flowDirty = true; flowTimer = 0;
 }
 function banner(t) { bannerText = t; bannerT = 2.2; }
@@ -505,6 +514,17 @@ function spawnBoss(hm) {
       fireCd: 2, angle: Math.atan2(player.y - y, player.x - x), target: null, wanderT: 0, lastSeen: { x: player.x, y: player.y }, searchT: 30,
       lookT: 0, flash: 0, alertT: 0, strafe: 1, strafeT: 3, speedMul: 0.5 });
 }
+function spawnUltra(hm) {
+    let x, y, tries = 0;
+    do { x = rand(120, WORLD.w - 120); y = rand(120, WORLD.h - 120); tries++; }
+    while (tries < 400 && (Math.hypot(x - player.x, y - player.y) < 800 || hitsWall(x, y, 80)));
+    const hp = Math.round(CFG.bossHp * CFG.ultraHpMul * hm);
+    robots.push({ x, y, type: 'ultra', r: 70, hp, maxHp: hp, speedMul: 0.4, sawCds: [0, 0], flaming: false, state: 'chase',
+      fireCd: 2, plasmaCd: 2.5, homingCd: 4, meteorCd: 3, summonCd: 6, stompCd: 3, enraged: false,
+      angle: Math.atan2(player.y - y, player.x - x), target: null, wanderT: 0, lastSeen: { x: player.x, y: player.y }, searchT: 999,
+      lookT: 0, flash: 0, alertT: 0, strafe: 1, strafeT: 3 });
+    shake = 20;
+}
 function spawnMini(hm) {
     let x, y, tries = 0;
     do { x = rand(80, WORLD.w - 80); y = rand(80, WORLD.h - 80); tries++; }
@@ -514,12 +534,155 @@ function spawnMini(hm) {
       fireCd: 1.5, angle: rand(0, 6.28), target: null, wanderT: 0, lastSeen: null, searchT: 0, lookT: 0, flash: 0, alertT: 0,
       strafe: 1, strafeT: 2 });
 }
+// ---------- Ultra-boss (hver 20. bølge) ----------
+let meteors = [];
+function updateUltra(r, dt, d) {
+  const enr = r.hp < r.maxHp * 0.5;
+  if (enr && !r.enraged) { r.enraged = true; banner('ULTRA BOSS RASER!'); shake = 18; rings.push({ x: r.x, y: r.y, t: 0 }); burst(r.x, r.y, '#ff3d6e', 40, 400); }
+  r.state = 'chase'; r.lastSeen = { x: player.x, y: player.y };
+  // bevægelse: går rundt om mure og maler sig igennem dine vægge
+  const step = CFG.ultraSpeed * (enr ? 1.5 : 1) * dt;
+  if (d > 140) navigate(r, player.x, player.y, step); else { r.wallTarget = null; r.angle = Math.atan2(player.y - r.y, player.x - r.x); }
+  if (r.wallTarget && builtAt[r.wallTarget.i]) {
+    const w = r.wallTarget;
+    if (Math.hypot(w.x + GS / 2 - r.x, w.y + GS / 2 - r.y) < r.r + GS * 0.6 + 10) { damageWall(w, w.maxHp * 0.6 * dt, true); if (Math.random() < 0.3) burst(w.x + GS / 2, w.y + GS / 2, '#c9a06a', 2, 150); }
+  }
+  // 2 save – en på hver side
+  for (let k = 0; k < 2; k++) {
+    const side = k ? 1 : -1, a = r.angle + side * Math.PI / 2;
+    const sx = r.x + Math.cos(a) * (r.r + 20), sy = r.y + Math.sin(a) * (r.r + 20);
+    r.sawCds[k] -= dt;
+    if (Math.hypot(player.x - sx, player.y - sy) < player.r + 26 && r.sawCds[k] <= 0) { hitPlayer(CFG.ultraSawDamage); r.sawCds[k] = CFG.sawTick; burst(player.x, player.y, '#ffe9a8', 6, 260); }
+    builtInBox(sx - 30, sy - 30, sx + 30, sy + 30, w => { damageWall(w, w.maxHp * 0.8 * dt, true); return false; });
+  }
+  // 3 flammekastere
+  if (d < CFG.ultraFlameRange + 60) {
+    r.flaming = true;
+    for (const side of [-1, 0, 1]) {
+      const fa = r.angle + side * 0.38;
+      const nx = r.x + Math.cos(fa) * (r.r + 6), ny = r.y + Math.sin(fa) * (r.r + 6);
+      robotFlame(r, nx, ny, fa, CFG.ultraFlameRange, CFG.bossFlameDps * 1.2, dt);
+    }
+  } else r.flaming = false;
+  // plasmakugler – store, langsomme og de brænder sig gennem dine vægge
+  r.plasmaCd -= dt;
+  if (r.plasmaCd <= 0 && d < 1000) {
+    const n = enr ? 5 : 3, base = Math.atan2(player.y - r.y, player.x - r.x);
+    for (let i = 0; i < n; i++) {
+      const a = base + (i - (n - 1) / 2) * 0.22;
+      bullets.push({ x: r.x + Math.cos(a) * (r.r + 10), y: r.y + Math.sin(a) * (r.r + 10), vx: Math.cos(a) * 230, vy: Math.sin(a) * 230,
+        life: 5, owner: 'r', dmg: CFG.ultraPlasmaDamage, plasma: true, hitWalls: {} });
+    }
+    burst(r.x + Math.cos(base) * r.r, r.y + Math.sin(base) * r.r, '#7dffcf', 14, 200, base, 0.8);
+    r.plasmaCd = enr ? 1.6 : 2.4;
+  }
+  // målsøgende missiler
+  r.homingCd -= dt;
+  if (r.homingCd <= 0) { shootHoming(r, enr ? 5 : 3); r.homingCd = enr ? 3 : 4; }
+  // meteorer – røde cirkler viser, hvor de lander
+  r.meteorCd -= dt;
+  if (r.meteorCd <= 0) {
+    const n = enr ? 6 : 4;
+    for (let i = 0; i < n; i++) {
+      const off = i === 0 ? 0 : rand(60, 280), a = rand(0, Math.PI * 2);
+      meteors.push({ x: clamp(player.x + Math.cos(a) * off + player.vx * 0.6, 30, WORLD.w - 30), y: clamp(player.y + Math.sin(a) * off + player.vy * 0.6, 30, WORLD.h - 30), t: -i * 0.12, warn: 1.3 });
+    }
+    r.meteorCd = enr ? 2.2 : 3.2;
+  }
+  // chokbølge når du er for tæt på
+  r.stompCd -= dt;
+  if (r.stompCd <= 0 && d < r.r + 130) {
+    r.stompCd = 4; shake = Math.max(shake, 14); rings.push({ x: r.x, y: r.y, t: 0, small: true }); burst(r.x, r.y, '#ff9db5', 30, 380);
+    hitPlayer(500);
+    const ux = (player.x - r.x) / (d || 1), uy = (player.y - r.y) / (d || 1); player.x += ux * 120; player.y += uy * 120; pushOut(player, player.wallBan <= 0);
+  }
+  // raser: kalder teleport-robotter til hjælp
+  if (enr) {
+    r.summonCd -= dt;
+    if (r.summonCd <= 0) {
+      r.summonCd = 12;
+      for (let i = 0; i < 2; i++) {
+        const a = rand(0, Math.PI * 2), x = clamp(r.x + Math.cos(a) * (r.r + 60), 40, WORLD.w - 40), y = clamp(r.y + Math.sin(a) * (r.r + 60), 40, WORLD.h - 40);
+        const hp = Math.round(CFG.robotHp * (1 + CFG.hpPerWave * (wave - 1)));
+        robots.push({ x, y, type: 'tele', ghostOff: 0, maxHp: hp, hp, speedMul: 1, r: 22, sawCd: 0, flaming: false, state: 'chase', fireCd: 0.8,
+          angle: 0, target: null, wanderT: 0, lastSeen: { x: player.x, y: player.y }, searchT: 6, lookT: 0, flash: 0, alertT: 1, strafe: 1, strafeT: 2 });
+        burst(x, y, '#c58cff', 18, 240);
+      }
+    }
+  }
+}
+function updateMeteors(dt) {
+  for (let i = meteors.length - 1; i >= 0; i--) {
+    const m = meteors[i]; m.t += dt;
+    if (m.t >= m.warn) {
+      meteors.splice(i, 1);
+      const R = CFG.ultraMeteorRadius;
+      shake = Math.max(shake, 8); rings.push({ x: m.x, y: m.y, t: 0.15, meteor: true });
+      burst(m.x, m.y, '#ff7a2a', 22, 320); burst(m.x, m.y, '#5a4a40', 14, 220); burst(m.x, m.y, '#ffdf6b', 8, 160);
+      if (Math.hypot(player.x - m.x, player.y - m.y) < R + player.r) hitPlayer(CFG.ultraMeteorDamage);
+      builtInBox(m.x - R, m.y - R, m.x + R, m.y + R, w => { if (circleHitsRect(m.x, m.y, R, w)) damageWall(w, w.maxHp * 0.6, true); return false; });
+    }
+  }
+}
+function drawUltra(r) {
+  const tt = performance.now() / 1000;
+  ctx.save(); ctx.translate(r.x, r.y);
+  ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.beginPath(); ctx.ellipse(6, 14, r.r + 8, r.r * 0.75, 0, 0, Math.PI * 2); ctx.fill();
+  if (r.enraged) { ctx.globalAlpha = 0.35 + 0.2 * Math.sin(tt * 10); circle(0, 0, r.r + 18); ctx.fillStyle = '#ff3d6e'; ctx.fill(); ctx.globalAlpha = 1; }
+  ctx.rotate(r.angle);
+  // 3 flammekastere foran
+  for (const side of [-1, 0, 1]) {
+    ctx.save(); ctx.rotate(side * 0.38);
+    ctx.fillStyle = '#3d2a20'; ctx.fillRect(r.r - 12, -9, 30, 18);
+    ctx.fillStyle = r.flaming ? '#ffb340' : '#7a4a2a'; ctx.fillRect(r.r + 16, -10, 8, 20);
+    ctx.restore();
+  }
+  // 2 save på siderne
+  for (const side of [-1, 1]) {
+    ctx.save(); ctx.translate(0, side * (r.r + 20)); ctx.rotate(tt * 26 * side);
+    ctx.beginPath();
+    for (let k = 0; k < 24; k++) { const a = k / 24 * Math.PI * 2, rad = k % 2 ? 18 : 26; ctx.lineTo(Math.cos(a) * rad, Math.sin(a) * rad); }
+    ctx.closePath(); ctx.fillStyle = '#e8ebef'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#6a7078'; ctx.stroke();
+    circle(0, 0, 6); ctx.fillStyle = '#555'; ctx.fill(); ctx.restore();
+  }
+  // krop
+  ctx.fillStyle = r.flash > 0 ? '#ffffff' : '#5a1626'; rr(-r.r, -r.r, r.r * 2, r.r * 2, 20); ctx.fill();
+  ctx.lineWidth = 6; ctx.strokeStyle = '#2a0810'; ctx.stroke();
+  // pigge
+  ctx.fillStyle = '#8a2238';
+  for (let k = 0; k < 8; k++) { ctx.save(); ctx.rotate(k / 8 * Math.PI * 2 + Math.PI / 8); ctx.beginPath(); ctx.moveTo(r.r - 6, -10); ctx.lineTo(r.r + 14, 0); ctx.lineTo(r.r - 6, 10); ctx.fill(); ctx.restore(); }
+  ctx.fillStyle = '#7a2a3e'; rr(-r.r + 10, -r.r + 10, 18, r.r * 2 - 20, 6); ctx.fill();
+  // missil-kapsler bagpå
+  for (const side of [-1, 1]) { ctx.fillStyle = '#3a3f48'; rr(-r.r + 4, side * 34 - 12, 28, 24, 5); ctx.fill(); ctx.fillStyle = '#e8323a'; circle(-r.r + 18, side * 34, 5); ctx.fill(); }
+  // plasma-kerne
+  const pulse = 0.6 + 0.4 * Math.sin(tt * 6);
+  circle(14, 0, 22); ctx.fillStyle = '#10241e'; ctx.fill();
+  circle(14, 0, 16 * pulse + 4); ctx.fillStyle = '#7dffcf'; ctx.fill();
+  circle(14, 0, 6); ctx.fillStyle = '#ffffff'; ctx.fill();
+  ctx.restore();
+}
+function drawMeteors() {
+  for (const m of meteors) {
+    if (m.t < 0) continue;
+    const f = clamp(m.t / m.warn, 0, 1), R = CFG.ultraMeteorRadius;
+    ctx.globalAlpha = 0.18 + 0.25 * f; circle(m.x, m.y, R); ctx.fillStyle = '#ff3b2a'; ctx.fill();
+    ctx.globalAlpha = 0.9; ctx.lineWidth = 3; ctx.strokeStyle = '#ff6a4a'; ctx.setLineDash([8, 6]); circle(m.x, m.y, R); ctx.stroke(); ctx.setLineDash([]);
+    ctx.globalAlpha = 0.6; circle(m.x, m.y, R * f); ctx.strokeStyle = '#ffd0c0'; ctx.lineWidth = 2; ctx.stroke();
+    // klippen der falder ned
+    const hy = (1 - f) * 380;
+    ctx.globalAlpha = 1; circle(m.x + hy * 0.3, m.y - hy, 16); ctx.fillStyle = '#5a4a40'; ctx.fill(); ctx.strokeStyle = '#ff9d3b'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.globalAlpha = 0.5; circle(m.x + hy * 0.3 + 8, m.y - hy - 14, 12); ctx.fillStyle = '#ff7a2a'; ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
 function spawnWave() {
   wave++;
   const bossWave = wave % CFG.bossEvery === 0;
   const hm = 1 + CFG.hpPerWave * (wave - 1);
   const n = bossWave ? Math.floor(wave / 2) : 1 + wave;
-  if (bossWave) spawnBoss(hm);
+  const ultraWave = wave % CFG.ultraEvery === 0;
+  if (ultraWave) spawnUltra(hm); else if (bossWave) spawnBoss(hm);
   spawnMini(hm);
   const pool = ['gunner', 'gunner', 'saw'];
   if (wave >= 2) pool.push('flame', 'flame');
@@ -537,10 +700,11 @@ function spawnWave() {
       target: null, wanderT: 0, lastSeen: null, searchT: 0, lookT: 0, flash: 0, alertT: 0,
       strafe: Math.random() < 0.5 ? 1 : -1, strafeT: rand(1, 2.5) });
   }
-  banner(bossWave ? 'BOSS – bølge ' + wave + '!' : 'Bølge ' + wave);
+  banner(wave % CFG.ultraEvery === 0 ? '☠ ULTRA BOSS – bølge ' + wave + '!' : bossWave ? 'BOSS – bølge ' + wave + '!' : 'Bølge ' + wave);
   {
     const mk = miniKit(wave), lines = ['Miniboss: ' + kitText(mk, false)];
-    if (bossWave) lines.unshift('BOSS: ' + kitText(bossKit(wave), true));
+    if (wave % CFG.ultraEvery === 0) lines.unshift('ULTRA BOSS: meteorer, plasmakugler, 3 flammekastere, 2 save, missiler');
+    else if (bossWave) lines.unshift('BOSS: ' + kitText(bossKit(wave), true));
     lines.forEach((t, i) => popups.push({ x: player.x, y: player.y + 60 + i * 24, text: t, color: i === 0 && bossWave ? '#d98aff' : '#8fd0ff', t: -1.6 }));
   }
   if (wave > 1) popups.push({ x: player.x, y: player.y - 50, text: `Robotter: +${Math.round(CFG.hpPerWave * (wave - 1) * 100)} % liv, +${Math.round(CFG.dmgPerWave * (wave - 1) * 100)} % skade`, color: '#ff8a7a', t: -0.6 });
@@ -702,6 +866,12 @@ function damageRobot(r, dmg, x, y) {
       for (let k = 0; k < 4; k++) burst(r.x + rand(-40, 40), r.y + rand(-40, 40), ['#ff9d3b', '#ffdf6b', '#8b96a5', '#ff5a2a'][k], 35, 420);
       powerups.push({ x: r.x, y: r.y, type: 'heal', t: 0 }); powerups.push({ x: r.x + 60, y: r.y, type: 'ammo', t: 0 });
       if (Math.random() < CFG.bossWeaponChance) spawnWeaponDrop(null, r.x - 60, r.y); // bossen taber nogle gange et sjældent våben
+    }
+    if (r.type === 'ultra') {
+      shake = 30; banner('☠ ULTRA BOSS BESEJRET!'); rings.push({ x: r.x, y: r.y, t: 0 }); meteors = [];
+      for (let k = 0; k < 8; k++) burst(r.x + rand(-70, 70), r.y + rand(-70, 70), ['#ff3d6e', '#ffdf6b', '#7dffcf', '#ff9d3b'][k % 4], 40, 480);
+      [['heal', 0, 0], ['maxhp', 70, 0], ['permdmg', -70, 0], ['permrate', 0, 70], ['ammo', 0, -70]].forEach(([t, dx, dy]) => powerups.push({ x: clamp(r.x + dx, 40, WORLD.w - 40), y: clamp(r.y + dy, 40, WORLD.h - 40), type: t, t: 0 }));
+      spawnWeaponDrop(null, clamp(r.x - 90, 40, WORLD.w - 40), r.y);
     }
     if (r.type === 'mini') {
       shake = 14; burst(r.x, r.y, '#4ab8ff', 25, 300);
@@ -959,7 +1129,7 @@ function explode(x, y) {
   rings.push({ x, y, t: 0 });
   burst(x, y, '#ffdf6b', 40, 520); burst(x, y, '#ff7a2a', 40, 420); burst(x, y, '#5a5f66', 30, 300);
   for (const r of robots.slice()) {
-    if (Math.hypot(r.x - x, r.y - y) < CFG.missileRadius + r.r) damageRobot(r, r.maxHp * (r.type === 'boss' ? 0.08 : r.type === 'mini' ? 0.2 : 0.75), r.x, r.y);
+    if (Math.hypot(r.x - x, r.y - y) < CFG.missileRadius + r.r) damageRobot(r, r.maxHp * (r.type === 'ultra' ? 0.03 : r.type === 'boss' ? 0.08 : r.type === 'mini' ? 0.2 : 0.75), r.x, r.y);
   }
 }
 
@@ -988,7 +1158,7 @@ function update(dt) {
   for (const w of builtWalls) w.flash = Math.max(0, w.flash - dt);
   flowTimer -= dt;
   if (robots.length && (flowDirty || flowTimer <= 0)) { computeFlow(); flowDirty = false; flowTimer = 0.25; }
-  updatePlayer(dt); updatePowerups(dt); updateWeaponDrops(dt); updateRobots(dt); updateBullets(dt); updateMissiles(dt);
+  updatePlayer(dt); updatePowerups(dt); updateWeaponDrops(dt); updateRobots(dt); updateBullets(dt); updateMissiles(dt); updateMeteors(dt);
   if (bannerT > 0) bannerT -= dt;
 }
 
@@ -1005,6 +1175,7 @@ function updatePlayer(dt) {
     if (l > 8) { const k = Math.min(1, l / 60); mx = dx / l * k; my = dy / l * k; }
   }
   const ml = Math.hypot(mx, my); if (ml > 1) { mx /= ml; my /= ml; }
+  p.vx = mx * CFG.playerSpeed; p.vy = my * CFG.playerSpeed;
   p.x += mx * CFG.playerSpeed * dt; p.y += my * CFG.playerSpeed * dt;
   // Egne vægge: man må stå i dem i 3 sek. – bliver man længere, skubbes man ud og kan ikke gå igennem dem i 20 sek.
   p.wallBan = Math.max(0, (p.wallBan || 0) - dt);
@@ -1059,6 +1230,7 @@ function updateRobots(dt) {
       if (r.teleCd <= 0 && (r.state !== 'wander' || Math.random() < 0.4)) { r.teleT = 0.45; r.teleCd = rand(2.5, 4); continue; }
     }
     const d = dist(r, player);
+    if (r.type === 'ultra') { updateUltra(r, dt, d); continue; }
     const visible = !player.hidden || player.reveal > 0 || d < CFG.closeSight;
     const sees = d < CFG.robotView && visible && losRobot(r, player);
 
@@ -1226,14 +1398,18 @@ function updateBullets(dt) {
     b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
     let dead = b.life <= 0 || b.x < 0 || b.y < 0 || b.x > WORLD.w || b.y > WORLD.h;
     if (!dead && !b.seek && !b.thru) for (const w of walls) if (segHitsRect(ox, oy, b.x, b.y, w)) { dead = true; burst(ox, oy, '#cfd6df', 5, 140); break; }
-    if (!dead && b.owner !== 'p') {
+    if (!dead && b.plasma) {
+      builtInBox(Math.min(ox, b.x) - 12, Math.min(oy, b.y) - 12, Math.max(ox, b.x) + 12, Math.max(oy, b.y) + 12, w => {
+        if (!b.hitWalls[w.i] && segHitsBox(ox, oy, b.x, b.y, w.x - 12, w.y - 12, w.x + w.w + 12, w.y + w.h + 12)) { b.hitWalls[w.i] = 1; damageWall(w, w.maxHp * 0.7, true); burst(b.x, b.y, '#7dffcf', 8, 180); }
+        return false; });
+    } else if (!dead && b.owner !== 'p') {
       const hw = builtInBox(Math.min(ox, b.x), Math.min(oy, b.y), Math.max(ox, b.x), Math.max(oy, b.y), w => segHitsRect(ox, oy, b.x, b.y, w));
       if (hw) { damageWall(hw, b.dmg); dead = true; burst(ox, oy, '#c9a06a', 5, 140); }
     }
     if (!dead) {
       if (b.owner === 'p') {
         for (const r of robots) if (Math.hypot(r.x - b.x, r.y - b.y) < r.r + 4) { hitRobot(r, b); dead = true; break; }
-      } else if (Math.hypot(player.x - b.x, player.y - b.y) < player.r + (b.big ? 8 : 4)) { hitPlayer(b.dmg); dead = true; }
+      } else if (Math.hypot(player.x - b.x, player.y - b.y) < player.r + (b.plasma ? 14 : b.big ? 8 : 4)) { hitPlayer(b.dmg); dead = true; if (b.plasma) { burst(b.x, b.y, '#7dffcf', 18, 260); rings.push({ x: b.x, y: b.y, t: 0.25, tele: true }); } }
     }
     if (dead) bullets.splice(i, 1);
   }
@@ -1327,7 +1503,8 @@ function draw() {
     const a = Math.atan2(b.vy, b.vx);
     ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(a);
     ctx.fillStyle = b.owner === 'p' ? (b.strong ? '#ff8a3d' : '#ffd86b') : b.ghost ? '#9fe8ff' : '#ff5a4a';
-    if (b.homing) { ctx.fillStyle = '#e8eaee'; rr(-8, -4, 16, 8, 3); ctx.fill(); ctx.fillStyle = '#e8323a'; ctx.beginPath(); ctx.moveTo(8, -4); ctx.lineTo(13, 0); ctx.lineTo(8, 4); ctx.fill(); }
+    if (b.plasma) { ctx.globalAlpha = 0.35; ctx.fillStyle = '#7dffcf'; circle(0, 0, 20); ctx.fill(); ctx.globalAlpha = 1; ctx.fillStyle = '#7dffcf'; circle(0, 0, 12); ctx.fill(); ctx.fillStyle = '#ffffff'; circle(0, 0, 5); }
+    else if (b.homing) { ctx.fillStyle = '#e8eaee'; rr(-8, -4, 16, 8, 3); ctx.fill(); ctx.fillStyle = '#e8323a'; ctx.beginPath(); ctx.moveTo(8, -4); ctx.lineTo(13, 0); ctx.lineTo(8, 4); ctx.fill(); }
     else if (b.big) { ctx.fillStyle = '#d94dff'; circle(0, 0, 8); ctx.fill(); ctx.fillStyle = '#f5c9ff'; circle(0, 0, 3.5); }
     else if (b.wtype === 'sniper') { ctx.fillStyle = b.strong ? '#ff8a3d' : '#bfefff'; rr(-22, -2.5, 44, 5, 2.5); }
     else if (b.wtype === 'shotgun' || b.wtype === 'minigun') { circle(0, 0, b.strong ? 4.5 : 3.5); }
@@ -1362,11 +1539,13 @@ function draw() {
   ctx.globalAlpha = 1;
 
   // Eksplosionsringe (viser missilets radius)
+  drawMeteors();
   for (const g of rings) {
     const f = g.t / 0.45;
     ctx.globalAlpha = 1 - f; ctx.lineWidth = 10 * (1 - f) + 2; ctx.strokeStyle = '#ffd86b';
     if (g.tele) ctx.strokeStyle = '#c58cff';
-    circle(g.x, g.y, (g.tele ? 45 : g.small ? 200 : CFG.missileRadius + 20) * Math.min(1, f * 1.6)); ctx.stroke();
+    if (g.meteor) ctx.strokeStyle = '#ff6a3a';
+    circle(g.x, g.y, (g.tele ? 45 : g.meteor ? CFG.ultraMeteorRadius + 10 : g.small ? 200 : CFG.missileRadius + 20) * Math.min(1, f * 1.6)); ctx.stroke();
     ctx.fillStyle = 'rgba(255,170,60,.25)'; ctx.fill();
   }
   ctx.globalAlpha = 1;
@@ -1387,7 +1566,8 @@ function draw() {
   // Livsbarer over robotter og spiller
   for (const r of robots) {
     if (r.type === 'ghost' && !ghostVisible(r)) continue;
-    if (r.type === 'boss') bar(r.x - 60, r.y - r.r - 18, 120, 9, r.hp / r.maxHp, '#c44dff');
+    if (r.type === 'ultra') bar(r.x - 90, r.y - r.r - 24, 180, 11, r.hp / r.maxHp, '#ff3d6e');
+    else if (r.type === 'boss') bar(r.x - 60, r.y - r.r - 18, 120, 9, r.hp / r.maxHp, '#c44dff');
     else if (r.type === 'mini') bar(r.x - 42, r.y - r.r - 16, 84, 8, r.hp / r.maxHp, '#ff9d3b');
     else bar(r.x - 26, r.y - r.r - 16, 52, 6, r.hp / r.maxHp, '#e2483d');
     if (r.state === 'chase' && r.alertT > 0) label('!', r.x, r.y - r.r - 24, '#ff4a3d');
@@ -1477,6 +1657,7 @@ function drawRobot(r) {
     ctx.strokeStyle = '#bfefff'; ctx.lineWidth = 2; rr(-r.r, -r.r, r.r * 2, r.r * 2, 7); ctx.stroke();
     ctx.restore(); return;
   }
+  if (r.type === 'ultra') return drawUltra(r);
   if (r.type === 'boss') return drawBoss(r);
   if (r.type === 'mini') return drawMini(r);
   ctx.save(); ctx.translate(r.x, r.y);
@@ -1515,9 +1696,17 @@ function drawPlayer() {
   ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(3, 7, p.r, p.r * 0.7, 0, 0, Math.PI * 2); ctx.fill();
   ctx.rotate(p.angle);
   drawGun(p.weapon, 1);
-  const gold = p.skin === 'gold';
+  const gold = p.skin === 'gold', rainbow = p.skin === 'rainbow';
+  if (rainbow && p.flash <= 0) { // animeret regnbue: farverne drejer rundt
+    const hue = (time * 140) % 360, g = ctx.createConicGradient ? ctx.createConicGradient(time * 3, 0, 0) : null;
+    if (g) { for (let k = 0; k <= 6; k++) g.addColorStop(k / 6, `hsl(${(hue + k * 60) % 360},95%,60%)`); ctx.fillStyle = g; } else ctx.fillStyle = `hsl(${hue},95%,60%)`;
+    circle(0, 0, p.r); ctx.fill();
+    ctx.lineWidth = 3; ctx.strokeStyle = `hsl(${(hue + 180) % 360},90%,40%)`; ctx.stroke();
+    ctx.strokeStyle = `hsla(${(hue + 90) % 360},100%,70%,.6)`; ctx.lineWidth = 2; circle(0, 0, p.r + 4 + Math.sin(time * 8) * 1.5); ctx.stroke();
+  } else {
   circle(0, 0, p.r); ctx.fillStyle = p.flash > 0 ? '#ff7b7b' : gold ? '#f2c94c' : '#3d8bff'; ctx.fill();
   ctx.lineWidth = 3; ctx.strokeStyle = gold ? '#9a7410' : '#1d4f99'; ctx.stroke();
+  }
   if (gold) { ctx.strokeStyle = 'rgba(255,248,200,' + (0.4 + 0.3 * Math.sin(time * 5)) + ')'; ctx.lineWidth = 2; circle(0, 0, p.r + 4); ctx.stroke(); }
   circle(-4, -4, p.r * 0.4); ctx.fillStyle = 'rgba(255,255,255,.25)'; ctx.fill();
   ctx.restore();
@@ -1623,14 +1812,14 @@ function drawHUDInner() {
   ctx.fillStyle = 'rgba(13,16,20,.75)'; rr(VW - 170, 8, 162, 82 + (lines.length - 3) * 23, 12); ctx.fill();
   lines.forEach((l, i) => { ctx.fillStyle = i === 0 ? '#fff' : i >= 3 ? extraColors[i - 3] : '#c9d3df'; ctx.font = (i === 0 ? '800 17px' : '600 14px') + ' system-ui,sans-serif'; ctx.fillText(l, VW - 20, 30 + i * 23); });
 
-  const boss = robots.find(r => r.type === 'boss');
+  const boss = robots.find(r => r.type === 'ultra') || robots.find(r => r.type === 'boss');
   if (boss) {
     const bw = Math.min(460, VW - 360 > 220 ? VW - 360 : VW - 40), bx = VW / 2 - bw / 2, byy = isTouch || VW < 760 ? VH - 100 : 18;
     ctx.fillStyle = 'rgba(13,16,20,.8)'; rr(bx - 8, byy - 8, bw + 16, 40, 10); ctx.fill();
     ctx.fillStyle = '#2a1b36'; rr(bx, byy, bw, 24, 6); ctx.fill();
-    ctx.fillStyle = '#c44dff'; rr(bx, byy, Math.max(12, bw * boss.hp / boss.maxHp), 24, 6); ctx.fill();
+    ctx.fillStyle = boss.type === 'ultra' ? '#ff3d6e' : '#c44dff'; rr(bx, byy, Math.max(12, bw * boss.hp / boss.maxHp), 24, 6); ctx.fill();
     ctx.textAlign = 'center'; ctx.font = '800 14px system-ui,sans-serif'; ctx.fillStyle = '#fff';
-    ctx.fillText(`BOSS  ${Math.max(0, Math.ceil(boss.hp))} / ${boss.maxHp}`, VW / 2, byy + 12.5);
+    ctx.fillText(`${boss.type === 'ultra' ? (boss.enraged ? '☠ ULTRA BOSS – RASER' : '☠ ULTRA BOSS') : 'BOSS'}  ${Math.max(0, Math.ceil(boss.hp))} / ${boss.maxHp}`, VW / 2, byy + 12.5);
   }
 
   // Bølge-banner
@@ -1706,7 +1895,7 @@ function menu() {
       <li><b>Skift våben:</b> tast 1 = pistol, 2, 3 … = våbnene i den rækkefølge du samlede dem op (eller klik på dem nederst)</li>`;
   const portrait = TOUCH && VH > VW;
   panel.innerHTML = `<h1>Robotjagt</h1><p>Overlev så mange bølger af robotter som muligt. <span style="color:#93a0b0">· v${VERSION}</span></p>
-    <div class="menu-btns"><button id="go">Start spil</button><button class="sec" id="admstart">⚙ Admin-tilstand</button><button class="sec" id="hsnow">🏆 Highscore</button><button class="sec" id="codesnow">🔑 Koder</button><button class="sec" id="lognow">Ændringslog</button></div>${pendingSkin ? '<p class="tip" style="color:#ffd84a">✨ Guld-skin er klar til næste runde</p>' : ''}
+    <div class="menu-btns"><button id="go">Start spil</button><button class="sec" id="admstart">⚙ Admin-tilstand</button><button class="sec" id="hsnow">🏆 Highscore</button><button class="sec" id="codesnow">🔑 Koder</button><button class="sec" id="lognow">Ændringslog</button></div>${pendingSkin ? (pendingSkin === 'rainbow' ? '<p class="tip" style="color:#8fd0ff">🌈 Regnbue-skin er klar til næste runde</p>' : '<p class="tip" style="color:#ffd84a">✨ Guld-skin er klar til næste runde</p>') : ''}
     ${portrait ? '<p class="tip">📱 Spillet er bedst, når du vender telefonen på langs.</p>' : ''}
     ${TOUCH && !canFullscreen() ? '<p class="tip">Tip: Del → "Føj til hjemmeskærm" giver fuld skærm.</p>' : ''}
     <details ${TOUCH ? '' : 'open'}><summary>Sådan spiller du</summary>
@@ -1722,8 +1911,9 @@ ${controls}
         <br>• <b>Flammerobot</b> (orange) – brænder dig på kort afstand
         <br>• <b>Teleport-robot</b> (lilla, fra bølge 3) – blinker og hopper rundt på banen, og skyder lige efter et hop
         <br>• <b>Usynlig robot</b> (fra bølge 4) – du kan kun se dens lyseblå skud – men hvert 5. sekund bliver den synlig i 2 sekunder. Den automatiske sigte rammer den ikke – sigt selv ${TOUCH ? 'ved at trække med højre tommel' : 'med musen'}</li>
-      <li><b>Miniboss</b> i hver bølge (blå): 2500 liv, pistoler og en sav foran. Den taber en powerup, når den dør. Den får flere angreb hver bølge: flere pistoler, flammekaster (bølge 4), ring-skud (bølge 6) og målsøgende raket (bølge 8).</li>
-      <li><b>Boss</b> hver 5. bølge: 5000 liv, 2 flammekastere og 3 pistoler. Den er langsom, og dens skud er langsomme – så du kan undvige. Den skyder også i en ring rundt om sig, og fra bølge 10 får den målsøgende raketter og en chokbølge. Bossen har altid flere angreb end minibossen.</li>
+      <li><b>Miniboss</b> i hver bølge (blå): 7500 liv, pistoler og en sav foran. Den taber en powerup, når den dør. Den får flere angreb hver bølge: flere pistoler, flammekaster (bølge 4), ring-skud (bølge 6) og målsøgende raket (bølge 8).</li>
+      <li><b>☠ Ultra-boss</b> hver 20. bølge: 5 gange bossens liv, 3 flammekastere, 2 save, målsøgende missiler, plasmakugler der brænder gennem vægge, og meteorer – flyt dig væk fra de røde cirkler! Under halvt liv går den amok og kalder hjælp.</li>
+      <li><b>Boss</b> hver 5. bølge: 25.000 liv, 2 flammekastere og 3 pistoler. Den er langsom, og dens skud er langsomme – så du kan undvige. Den skyder også i en ring rundt om sig, og fra bølge 10 får den målsøgende raketter og en chokbølge. Bossen har altid flere angreb end minibossen.</li>
       <li><b>Powerups</b> dukker op rundt på banen – gå hen over dem:
         <br>• <b style="color:#ff7ab0">+</b> Helbredelse – 1200 liv tilbage
         <br>• <b style="color:#ff9a2a">2×</b> Dobbelt skade i 10 sekunder
@@ -1739,7 +1929,7 @@ ${controls}
         <br>• <b style="color:#6fd3ff">Sniper</b> – uendelig rækkevidde og 4× skade, men skyder langsomt
         <br>• <b style="color:#9be36f">Rifle</b> – skyder hurtigere og gør lidt mere skade end pistolen
         <br>• <b style="color:#ff6a2a">Flammekaster</b> (meget sjælden) – brænder alle robotter i en kegle foran dig${TOUCH ? ' (hold højre tommel trukket ud)' : ' (hold knappen nede)'}</li>
-      <li><b>Byg vægge:</b> du får 1 byggemateriale hvert 3. sekund (højst 30), og 1 materiale bygger 1 væg. Du kan selv gå og skyde igennem dine vægge – robotterne kan ikke. Men står du inde i en væg i mere end 3 sekunder, bliver du smidt ud og kan ikke gå gennem vægge i 20 sekunder. Robotterne går udenom, hvis der er en åbning, ellers skyder de væggen i stykker.</li>
+      <li><b>Byg vægge:</b> du får 1 byggemateriale hvert 3. sekund (højst 50), og 1 materiale bygger 1 væg. Du kan selv gå og skyde igennem dine vægge – robotterne kan ikke. Men står du inde i en væg i mere end 3 sekunder, bliver du smidt ud og kan ikke gå gennem vægge i 20 sekunder. Robotterne går udenom, hvis der er en åbning, ellers skyder de væggen i stykker.</li>
       <li><b>Admin-tilstand</b> (knappen på startskærmen): alle kan bruge admin-panelet uden kode – men runden kommer ikke på highscore-tavlen.</li>
       <li><b>Buske</b> skjuler dig. Men skyder du fra en busk, kan robotterne se dig et kort øjeblik – og kommer de helt tæt på, opdager de dig.</li>
     </ul>
@@ -1903,7 +2093,7 @@ function openLog() {
 // ---------- Admin-panel ----------
 // ---------- Koder (fra startskærmen) ----------
 let pendingSkin = null; // gælder kun for næste runde
-const CODES = { 193423269: 'gold' }; // koderne gemmes kun som tal, så de ikke kan læses i koden
+const CODES = { 193423269: 'gold', 1715379802: 'rainbow' }; // koderne gemmes kun som tal, så de ikke kan læses i koden
 function codeHash(t) { let h = 5381; for (const c of t.trim().toLowerCase()) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0; return h; }
 function openCodes() {
   panel.innerHTML = `<h1>🔑 Koder</h1><p>Har du en kode? Skriv den her.</p>
@@ -1916,6 +2106,7 @@ function openCodes() {
     e.preventDefault();
     const msg = document.getElementById('codemsg'), what = CODES[codeHash(inp.value)];
     if (what === 'gold') { pendingSkin = 'gold'; msg.style.color = '#ffd84a'; msg.textContent = '✨ Guld-skin aktiveret til næste runde!'; }
+    else if (what === 'rainbow') { pendingSkin = 'rainbow'; msg.style.color = '#8fd0ff'; msg.textContent = '🌈 Regnbue-skin aktiveret til næste runde!'; }
     else { msg.style.color = ''; msg.textContent = 'Ukendt kode'; }
     inp.value = ''; inp.focus();
   };
@@ -1986,8 +2177,9 @@ function adminControls() {
       <button data-a="next">Spring til næste bølge</button>
       <button data-a="boss">Lav en boss</button>
       <button data-a="mini">Lav en miniboss</button>
+      <button data-a="ultra">Lav en ultra-boss</button>
     </div>
-    <div class="admin-row"><span>Gå til bølge</span><input id="admwave" type="number" min="1" max="99" value="${Math.max(1, wave)}"><button data-a="gowave" style="margin:0">Gå</button></div>
+    <div class="admin-row"><span>Gå til bølge</span><input id="admwave" type="number" min="1" max="999" value="${Math.max(1, wave)}"><button data-a="gowave" style="margin:0">Gå</button></div>
     <div class="adm-h">Giv dig powerups (virker med det samme)</div>
     <div class="admin-row"><span>Antal</span><input id="admcount" type="number" min="1" max="50" value="${adminCount}"></div>
     <div class="admin-grid">
@@ -2030,10 +2222,11 @@ function adminAction(a) {
   if (a === 'killall') { for (const r of robots) burst(r.x, r.y, '#ff9d3b', 20, 300); kills += robots.length; robots.length = 0; bullets = bullets.filter(b => b.owner === 'p'); waveTimer = 2.5; adminToast('Alle robotter er væk'); }
   if (a === 'next') { robots.length = 0; bullets.length = 0; waveTimer = 0.3; adminToast('Næste bølge kommer'); }
   if (a === 'gowave') {
-    const n = clamp(parseInt(document.getElementById('admwave').value, 10) || 1, 1, 99);
+    const n = clamp(parseInt(document.getElementById('admwave').value, 10) || 1, 1, 999);
     robots.length = 0; bullets.length = 0; wave = n - 1; waveTimer = 0.3; adminToast('Bølge ' + n + ' starter, når du går tilbage');
   }
   if (a === 'boss') { const w = wave; if (w < 1) wave = 1; spawnBoss(hm); robots[robots.length - 1].kit = bossKit(Math.max(CFG.bossEvery, wave)); wave = w; adminToast('Boss lavet'); }
+  if (a === 'ultra') { const w = wave; if (w < 1) wave = 1; spawnUltra(hm); wave = w; adminToast('Ultra-boss lavet'); }
   if (a === 'mini') { const w = wave; if (w < 1) wave = 1; spawnMini(hm); wave = w; adminToast('Miniboss lavet'); }
   if (a.startsWith('p-')) {
     const t = a.slice(2);
