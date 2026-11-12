@@ -75,6 +75,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.32', d: '12-11-2026', items: ['Spillet har fået ny adresse: keha.dk/robotjagt (den gamle adresse keha.dk/robotspil sender automatisk videre)'] },
   { v: '1.31', d: '11-11-2026', items: ['Rettet: spillet kunne fryse ("Siden svarer ikke") i op til 12 sekunder, når der var bygget mange vægge. Årsagen var en regnefejl i robotternes vejfinding, som fik den til at regne de samme felter om igen og igen', 'Vægge slås nu op i et gitter i stedet for at blive gennemgået én for én', 'Mindre arbejde for computeren i hvert billede (ingen unødvendige kopier af lister)', 'Loft over antal effekter, så telefoner ikke går i stå', 'En fejl i ét billede stopper ikke længere hele spillet – det kører videre'] },
   { v: '1.30', d: '11-11-2026', items: ['Man kan nu skifte tilbage til admin-tilstand fra et normalt spil: knap i pause-menuen og ved game over', 'Menu-knap i pause-menuen'] },
   { v: '1.29', d: '11-11-2026', items: ['Når spillet ikke kører på keha.dk, står der nu tydeligt, at tavlen kun gælder denne enhed, med et link til den fælles tavle på keha.dk/robotspil'] },
@@ -1745,7 +1746,7 @@ function hsTable(list, mark) {
   return h + '<table class="hs"><tr><th>#</th><th>Navn</th><th class="n">Nedlagt</th><th class="n">Bølge</th></tr>' +
     list.map((e, i) => `<tr class="${mark && e.name === mark.name && e.kills === mark.kills && e.wave === mark.wave ? 'me' : ''}"><td>${i + 1}</td><td>${esc(e.name)}</td><td class="n">${e.kills}</td><td class="n">${e.wave}</td></tr>`).join('') + '</table>';
 }
-const hsWhere = () => HS_SHARED ? 'Fælles tavle for alle på keha.dk' : 'Kun denne enhed – den fælles tavle er på <a href="https://keha.dk/robotspil/" target="_blank" rel="noopener" style="color:#8fd0ff">keha.dk/robotspil</a>';
+const hsWhere = () => HS_SHARED ? 'Fælles tavle for alle på keha.dk' : 'Kun denne enhed – den fælles tavle er på <a href="https://keha.dk/robotjagt/" target="_blank" rel="noopener" style="color:#8fd0ff">keha.dk/robotjagt</a>';
 
 async function openHighscore(from) {
   const back = from || 'menu';

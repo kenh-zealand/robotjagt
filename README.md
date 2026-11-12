@@ -4,7 +4,7 @@ Et top-down skydespil i browseren: overlev så mange bølger af robotter som mul
 
 Hele spillet ligger i én fil, `index.html`.
 
-Spillet virker både på computer og telefon. På telefonen går det i fuld skærm, når du trykker Start, og det spilles bedst med telefonen vendt på langs. Kan spilles på https://keha.dk/robotspil Download den og åbn den i en browser, eller slå GitHub Pages til for repoet, så kan spillet spilles direkte fra en adresse.
+Spillet virker både på computer og telefon. På telefonen går det i fuld skærm, når du trykker Start, og det spilles bedst med telefonen vendt på langs. Kan spilles på https://keha.dk/robotjagt Download den og åbn den i en browser, eller slå GitHub Pages til for repoet, så kan spillet spilles direkte fra en adresse.
 
 ## Sådan spiller du
 
@@ -29,7 +29,7 @@ Spillet virker både på computer og telefon. På telefonen går det i fuld skæ
 - Sjældne våben at samle op: shotgun, minigun, sniper og rifle
 - Super: et målsøgende missil efter hver 10. træffer
 - Powerups: helbredelse, dobbelt skade, super, hurtig genladning, +500 max liv, +1 skud, +25 % skade og +25 % skudhastighed
-- Highscore-tavle med top 10 (fælles for alle på keha.dk/robotspil). Runder hvor admin-panelet er brugt, kommer ikke på
+- Highscore-tavle med top 10 (fælles for alle på keha.dk/robotjagt). Runder hvor admin-panelet er brugt, kommer ikke på
 - Admin-panel med kode
 - Ændringslog i spillet (klik på versionsnummeret nederst til venstre)
 
