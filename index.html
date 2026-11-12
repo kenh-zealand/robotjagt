@@ -82,7 +82,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
-  { v: '1.56', d: '12-11-2026', items: ['🤡 Ny spiltilstand: Aprilsnar – alt skyder granater, der eksploderer, hvor de rammer. Runderne kommer ikke på highscore'] },
+  { v: '1.56', d: '12-11-2026', items: ['🤡 Ny spiltilstand: Aprilsnar – alle dine skud er granater, lige så stærke som rigtige granater. Runderne kommer ikke på highscore'] },
   { v: '1.55', d: '12-11-2026', items: ['Miniboss, boss og ultra-boss smadrer med det samme alle dine vægge inden for 3 spillerbredder', 'Flammerobotternes flammer er dobbelt så store, så de passer til, hvor langt de rækker'] },
   { v: '1.54', d: '12-11-2026', items: ['Der kan ligge ubegrænset mange granater på banen på samme tid, og der er ingen grænse for, hvor mange du kan have'] },
   { v: '1.53', d: '12-11-2026', items: ['Regnbue-skinnet er gjort meget flottere: holografisk regnbue i to lag, lysende glorie, glans, kredsende lys og et regnbuespor, når du løber', 'Med regnbue-skin bliver dit våben også regnbuefarvet'] },
@@ -218,7 +218,6 @@ const CFG = {
   ultraMeteorDamage: 450,
   ultraMeteorRadius: 85,
   grenadeDamage: 10000, // granat: 10.000 skade
-  aprilRadius: 70,      // aprilsnar: sprængradius for hvert skud
   grenadeRadius: 440,   // dobbelt så stor som super-missilets eksplosion (220)
   grenadesPerPickup: 3, // man får 3 granater, når man samler en op
   grenadeFirst: 120,    // lige så sjældne som våben: første efter 2 min.
@@ -1648,16 +1647,17 @@ function updateBullets(dt) {
         for (const r of robots) if (Math.hypot(r.x - b.x, r.y - b.y) < r.r + 4) { hitRobot(r, b); dead = true; break; }
       } else if (Math.hypot(player.x - b.x, player.y - b.y) < player.r + (b.plasma ? 14 : b.big ? 8 : 4)) { hitPlayer(b.dmg); dead = true; if (b.plasma) { burst(b.x, b.y, '#7dffcf', 18, 260); rings.push({ x: b.x, y: b.y, t: 0.25, tele: true }); } }
     }
-    if (dead) { if (aprilMode && !b.plasma) aprilBoom(b); bullets.splice(i, 1); }
+    if (dead) { if (aprilMode && b.owner === 'p') aprilBoom(b); bullets.splice(i, 1); }
   }
 }
-// 🤡 Aprilsnar: hvert skud er en lille granat, der eksploderer, hvor den rammer eller lander
+// 🤡 Aprilsnar: hvert af dine skud er en rigtig granat (samme skade og radius) – robotterne skyder som normalt
+let aprilFx = 0; // begrænser røg og gnister, når der eksploderer mange på én gang (fx minigun)
 function aprilBoom(b) {
-  const R = CFG.aprilRadius, x = b.x, y = b.y;
-  burst(x, y, '#ffdf6b', 14, 320); burst(x, y, '#ff7a2a', 12, 260); burst(x, y, '#5a5f66', 8, 220);
-  rings.push({ x, y, t: 0, april: true }); shake = Math.max(shake, b.owner === 'p' ? 2 : 4);
-  if (b.owner === 'p') { for (const r of robots.slice()) if (Math.hypot(r.x - x, r.y - y) < R + r.r) damageRobot(r, b.dmg * 0.6, r.x, r.y, true); }
-  else if (Math.hypot(player.x - x, player.y - y) < R + player.r) hitPlayer(b.dmg * 0.6, true);
+  const R = CFG.grenadeRadius, x = b.x, y = b.y;
+  for (const r of robots.slice()) if (Math.hypot(r.x - x, r.y - y) < R + r.r) damageRobot(r, CFG.grenadeDamage * D.playerDmg, r.x, r.y, true);
+  if (time - aprilFx > 0.12) { aprilFx = time; shake = Math.max(shake, 12); rings.push({ x, y, t: 0, grenade: true });
+    burst(x, y, '#ffdf6b', 30, 600); burst(x, y, '#ff7a2a', 30, 480); burst(x, y, '#5a5f66', 16, 380); }
+  else burst(x, y, '#ff9a3a', 6, 300);
 }
 function updateParticles(dt) {
   if (particles.length > CFG.maxParticles) particles.splice(0, particles.length - CFG.maxParticles); // loft over effekter, så telefoner ikke går i stå
@@ -1750,8 +1750,8 @@ function draw() {
     const a = Math.atan2(b.vy, b.vx);
     ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(a);
     ctx.fillStyle = b.owner === 'p' ? (b.strong ? '#ff8a3d' : '#ffd86b') : b.ghost ? '#9fe8ff' : '#ff5a4a';
-    if (aprilMode && !b.plasma) { // granat der snurrer
-      ctx.rotate(time * 14); ctx.scale(1.5, 1.5); ctx.fillStyle = b.owner === 'p' ? '#4f7a3a' : '#7a3a3a'; circle(0, 0, 6); ctx.fill();
+    if (aprilMode && b.owner === 'p') { // granat der snurrer
+      ctx.rotate(time * 14); ctx.scale(1.5, 1.5); ctx.fillStyle = '#4f7a3a'; circle(0, 0, 6); ctx.fill();
       ctx.fillStyle = '#2a2f38'; ctx.fillRect(-2, -9, 4, 4); ctx.strokeStyle = '#c9d3df'; ctx.lineWidth = 1.5; circle(3, -8, 2.5); ctx.stroke();
       ctx.fillStyle = 'rgba(255,255,255,.35)'; circle(-2, -2, 2); }
     else if (b.plasma) { ctx.globalAlpha = 0.35; ctx.fillStyle = '#7dffcf'; circle(0, 0, 20); ctx.fill(); ctx.globalAlpha = 1; ctx.fillStyle = '#7dffcf'; circle(0, 0, 12); ctx.fill(); ctx.fillStyle = '#ffffff'; circle(0, 0, 5); }
@@ -1797,7 +1797,7 @@ function draw() {
     if (g.tele) ctx.strokeStyle = '#c58cff';
     if (g.meteor) ctx.strokeStyle = '#ff6a3a';
     if (g.grenade) ctx.strokeStyle = '#ffdf6b';
-    circle(g.x, g.y, (g.grenade ? CFG.grenadeRadius : g.april ? CFG.aprilRadius : g.tele ? 45 : g.meteor ? CFG.ultraMeteorRadius + 10 : g.small ? 200 : CFG.missileRadius + 20) * Math.min(1, f * 1.6)); ctx.stroke();
+    circle(g.x, g.y, (g.grenade ? CFG.grenadeRadius : g.tele ? 45 : g.meteor ? CFG.ultraMeteorRadius + 10 : g.small ? 200 : CFG.missileRadius + 20) * Math.min(1, f * 1.6)); ctx.stroke();
     ctx.fillStyle = 'rgba(255,170,60,.25)'; ctx.fill();
   }
   ctx.globalAlpha = 1;
@@ -2302,7 +2302,7 @@ ${controls}
 }
 // admin = true: admin-tilstand – alle har admin uden kode, men runden tæller ikke på highscore
 let aprilMode = false; // 🤡 aprilsnar: alt skyder granater – runden tæller ikke på highscore
-function start(admin) { D = DIFFS[difficulty]; reset(); if (!D.autoReload) player.ammo = CFG.hardStartAmmo; if (!D.autoMats) materials = CFG.startMaterials; player.skin = pendingSkin; if (player.skin === 'flame') player.dmgMul += 0.1; if (player.skin === 'angel') { player.dmgMul += 2; player.speedMul = 2; player.reloadMul = 2; player.revives = 5; } pendingSkin = null; adminFree = false; secretBuf = ''; for (const k in cheats) cheats[k] = false; adminMode = !!admin; usedAdmin = adminMode; state = 'play'; overlay.classList.add('hidden'); last = performance.now(); if (aprilMode) popups.push({ x: player.x, y: player.y - 70, text: '🤡 APRILSNAR – alt skyder granater!', color: '#ff9de2', t: -1 }); }
+function start(admin) { D = DIFFS[difficulty]; reset(); if (!D.autoReload) player.ammo = CFG.hardStartAmmo; if (!D.autoMats) materials = CFG.startMaterials; player.skin = pendingSkin; if (player.skin === 'flame') player.dmgMul += 0.1; if (player.skin === 'angel') { player.dmgMul += 2; player.speedMul = 2; player.reloadMul = 2; player.revives = 5; } pendingSkin = null; adminFree = false; secretBuf = ''; for (const k in cheats) cheats[k] = false; adminMode = !!admin; usedAdmin = adminMode; state = 'play'; overlay.classList.add('hidden'); last = performance.now(); if (aprilMode) popups.push({ x: player.x, y: player.y - 70, text: '🤡 APRILSNAR – du skyder granater!', color: '#ff9de2', t: -1 }); }
 function pause() {
   state = 'pause'; mouse.down = false; keys.clear();
   showPanel(`<h1>Pause</h1><p>Bølge ${wave} · ${kills} robotter nedlagt</p>`, 'Fortsæt', resume);
