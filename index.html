@@ -81,7 +81,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
-  { v: '1.50', d: '12-11-2026', items: ['Admin: vælg selv antal nedlagte robotter'] },
+  { v: '1.50', d: '12-11-2026', items: ['Admin: vælg selv antal nedlagte robotter (0–999.999)'] },
   { v: '1.49', d: '12-11-2026', items: ['Svær: du kan ikke længere gå igennem dine egne vægge'] },
   { v: '1.48', d: '12-11-2026', items: ['Flammekasteren giver efterbrand: robotter du rammer, brænder videre i 3 sekunder (300 skade pr. sekund, plus dine skade-opgraderinger). Robotternes egne flammer giver ikke efterbrand'] },
   { v: '1.47', d: '12-11-2026', items: ['Tre sværhedsgrader på startskærmen: Let, Normal og Svær', 'Let: dobbelt liv, dobbelt så hurtig genladning, robotterne er halvt så stærke. Miniboss hver 5. bølge, boss hver 20., ingen ultra-boss. Mellemrum sigter automatisk på nærmeste robot', 'Svær: du er halvt så stærk, robotterne dobbelt så stærke. Ingen genladning og ingen gratis byggemateriale – find skud-kasser og trækasser på banen', 'Highscore-tavle for hver sværhedsgrad – plus en Admin-tavle til runder med admin', 'Genladning: kun et rigtigt skud sætter genladningen på pause – man kan lade op, selvom man spammer knappen'] },
@@ -2406,7 +2406,7 @@ function adminControls() {
       <button data-a="mini">Lav en miniboss</button>
       <button data-a="ultra">Lav en ultra-boss</button>
     </div>
-    <div class="admin-row"><span>Nedlagt</span><input id="admkills" type="number" min="0" max="1000000" value="${kills}"><button data-a="setkills" style="margin:0">Sæt</button></div>
+    <div class="admin-row"><span>Nedlagt</span><input id="admkills" type="number" min="0" max="999999" value="${kills}"><button data-a="setkills" style="margin:0">Sæt</button></div>
     <div class="admin-row"><span>Gå til bølge</span><input id="admwave" type="number" min="1" max="999" value="${Math.max(1, wave)}"><button data-a="gowave" style="margin:0">Gå</button></div>
     <div class="adm-h">Giv dig powerups (virker med det samme)</div>
     <div class="admin-row"><span>Antal</span><input id="admcount" type="number" min="1" max="50" value="${adminCount}"></div>
@@ -2441,7 +2441,7 @@ function adminAction(a) {
     else { giveWeapon(t); adminToast('Du har nu: ' + WEAPONS[t].name + ' (plads ' + (p.inventory.indexOf(t) + 1) + ')'); }
   }
   if (a === 'nades') { p.grenades += 3; adminToast('Granater: ' + p.grenades); }
-  if (a === 'setkills') { kills = clamp(parseInt(document.getElementById('admkills').value, 10) || 0, 0, 1000000); adminToast('Nedlagt: ' + kills); }
+  if (a === 'setkills') { kills = clamp(parseInt(document.getElementById('admkills').value, 10) || 0, 0, 999999); adminToast('Nedlagt: ' + kills); }
   if (a === 'mats') { materials += 20; adminToast('Byggemateriale: ' + materials); }
   if (a === 'heal') { p.hp = p.maxHp; adminToast('Liv fyldt op'); }
   if (a === 'super') { superCharge = CFG.superHits; adminToast('Super er klar'); }
