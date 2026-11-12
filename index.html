@@ -75,6 +75,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.43', d: '12-11-2026', items: ['Granater kastes nu med F (før G)'] },
   { v: '1.42', d: '12-11-2026', items: ['Flammekasteren gør 3 gange så meget skade og bruger 3 gange mindre ammo'] },
   { v: '1.41', d: '12-11-2026', items: ['Granater på banen – lige så sjældne som våben. Du får 3 ad gangen. Hver gør 10.000 skade i et område dobbelt så stort som super-missilets eksplosion', 'Kast med G (hen hvor musen peger) eller den grønne GRANAT-knap på telefon', 'Admin: +3 granater'] },
   { v: '1.40', d: '12-11-2026', items: ['Flammekasterens flamme er 4 gange større: dobbelt så lang og dobbelt så bred – og den rammer lige så langt og bredt, som den ser ud'] },
@@ -731,7 +732,7 @@ addEventListener('keydown', e => {
   if ((e.code === 'KeyP' || e.code === 'Escape') && !e.repeat) { if (state === 'play') pause(); else if (state === 'pause') resume(); return; }
   if ((e.code === 'Enter') && state !== 'play') { if (state === 'pause') resume(); else start(); return; }
   if (e.code === 'KeyQ' && !e.repeat) { fireSuper(); return; }
-  if (e.code === 'KeyG' && !e.repeat) { throwGrenade(); return; }
+  if (e.code === 'KeyF' && !e.repeat) { throwGrenade(); return; }
   const dn = /^(Digit|Numpad)([1-9])$/.exec(e.code); if (dn) { selectSlot(+dn[2] - 1); return; }
   if (e.code === 'KeyE' && !e.repeat && (state === 'play' || state === 'pause')) { openAdmin(); return; }
   keys.add(e.code);
@@ -1096,7 +1097,7 @@ function updateGrenades(dt) {
     if (Math.hypot(g.x - player.x, g.y - player.y) < player.r + 22) {
       player.grenades += CFG.grenadesPerPickup; grenadeDrops.splice(i, 1);
       burst(g.x, g.y, '#9be36f', 20, 240);
-      popups.push({ x: player.x, y: player.y - 40, text: `+${CFG.grenadesPerPickup} granater (${TOUCH ? 'GRANAT-knappen' : 'tast G'})`, color: '#9be36f', t: 0 });
+      popups.push({ x: player.x, y: player.y - 40, text: `+${CFG.grenadesPerPickup} granater (${TOUCH ? 'GRANAT-knappen' : 'tast F'})`, color: '#9be36f', t: 0 });
     }
   }
   for (let i = grenadesFlying.length - 1; i >= 0; i--) {
@@ -1891,7 +1892,7 @@ function drawHUDInner() {
   const lines = [`Bølge ${wave}`, `Robotter: ${robots.length}`, `Nedlagt: ${kills}`];
   const extraColors = [];
   if (p.dmgMul > 1) { lines.push(`Skade: +${Math.round((p.dmgMul - 1) * 100)} %`); extraColors.push('#c99bff'); }
-  if (p.grenades > 0) { lines.push(`Granater: ${p.grenades}${isTouch ? '' : ' (G)'}`); extraColors.push('#9be36f'); }
+  if (p.grenades > 0) { lines.push(`Granater: ${p.grenades}${isTouch ? '' : ' (F)'}`); extraColors.push('#9be36f'); }
   if (adminMode) { lines.push('ADMIN-TILSTAND'); extraColors.push('#ffd84a'); }
   if (p.rateMul > 1) { lines.push(`Skudhast.: +${Math.round((p.rateMul - 1) * 100)} %`); extraColors.push('#6ff0e2'); }
   ctx.fillStyle = 'rgba(13,16,20,.75)'; rr(VW - 170, 8, 162, 82 + (lines.length - 3) * 23, 12); ctx.fill();
@@ -1983,7 +1984,7 @@ function menu() {
       <li><b>Skyd:</b> mellemrum – sigter automatisk på den nærmeste robot, du kan se</li>
       <li><b>Sigt selv:</b> brug musen og venstreklik, hvis du hellere vil det</li>
       <li><b>Byg en væg:</b> højreklik (hold og træk for at bygge flere)</li>
-      <li><b>Super:</b> Q · <b>Granat:</b> G (kastes hen hvor musen peger) · <b>Pause:</b> P eller Esc · <b>Admin:</b> E</li>
+      <li><b>Super:</b> Q · <b>Granat:</b> F (kastes hen hvor musen peger) · <b>Pause:</b> P eller Esc · <b>Admin:</b> E</li>
       <li><b>Skift våben:</b> tast 1 = pistol, 2, 3 … = våbnene i den rækkefølge du samlede dem op (eller klik på dem nederst)</li>`;
   const portrait = TOUCH && VH > VW;
   panel.innerHTML = `<h1>Robotjagt</h1><p>Overlev så mange bølger af robotter som muligt. <span style="color:#93a0b0">· v${VERSION}</span></p>

@@ -15,7 +15,7 @@ Spillet virker både på computer og telefon. På telefonen går det i fuld skæ
 | Sigt selv | Mus + venstreklik | Træk med højre tommel og slip |
 | Byg en væg | Højreklik (hold og træk for flere) | BYG-knappen, og tryk på banen |
 | Super-missil | Q | SUPER-knappen |
-| Kast granat | G (hen hvor musen peger) | GRANAT-knappen |
+| Kast granat | F (hen hvor musen peger) | GRANAT-knappen |
 | Pause | P eller Esc | Pauseknappen |
 | Admin-panel (kræver kode) | E | Pauseknappen → Admin |
 
