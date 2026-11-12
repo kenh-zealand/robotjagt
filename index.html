@@ -75,6 +75,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.40', d: '12-11-2026', items: ['Flammekasterens flamme er 4 gange større: dobbelt så lang og dobbelt så bred – og den rammer lige så langt og bredt, som den ser ud'] },
   { v: '1.39', d: '12-11-2026', items: ['Rettet: et lille flueben i admin-panelet forsvandt, når man åbnede panelet igen'] },
   { v: '1.38', d: '12-11-2026', items: ['☠ Ultra-boss hver 20. bølge: 5 gange bossens liv, meteorer, plasmakugler, 3 flammekastere, 2 save og målsøgende missiler. Under halvt liv går den amok, bliver hurtigere og kalder teleport-robotter', 'Bossen har 5 gange så meget liv, og minibossen 3 gange', 'Man kan have op til 50 byggematerialer', 'Admin: gå til bølge 1–999 og lav en ultra-boss', 'En ny hemmelig kode giver et animeret regnbue-skin i næste runde'] },
   { v: '1.37', d: '12-11-2026', items: ['Flammekasterens flamme ser nu lige så lang ud, som den rammer'] },
@@ -218,7 +219,7 @@ const WEAPONS = {
   sniper:  { name: 'Sniper',  color: '#6fd3ff', dmg: 4,    gap: 0.9,  reload: 2.4, cost: 1,    pellets: 1,  spread: 0,    range: 99,   speed: 1900, superGain: 2 },
   rifle:   { name: 'Rifle',   color: '#9be36f', dmg: 1.3,  gap: 0.11, reload: 0.7, cost: 1,    pellets: 1,  spread: 0.02, range: 1.25, speed: 1100, superGain: 1 },
   // Flammekaster: brænder alle robotter i en kegle foran dig. 3 gange sjældnere end de andre våben.
-  flamer:  { name: 'Flammekaster', short: 'FLAMME', color: '#ff6a2a', dmg: 0.36, gap: 0.05, reload: 1, cost: 0.1, pellets: 0, spread: 0.35, range: 0.34, speed: 0, superGain: 0.1, auto: true, flame: true }
+  flamer:  { name: 'Flammekaster', short: 'FLAMME', color: '#ff6a2a', dmg: 0.36, gap: 0.05, reload: 1, cost: 0.1, pellets: 0, spread: 0.7, range: 0.68, speed: 0, superGain: 0.1, auto: true, flame: true }
 };
 
 // ---------- Hjælpere ----------
@@ -801,10 +802,10 @@ function tryShoot(angle) {
   if (W.flame) { // flammekaster: skade på alle robotter i keglen foran dig
     const range = cheats.range ? 900 : CFG.bulletRange * W.range;
     // flammerne skal række lige så langt som skaden (med drag 0.97 og ~0,55 sek. liv flyver de ca. 0,35 × fart)
-    for (let k = 0; k < 5; k++) {
+    for (let k = 0; k < 8; k++) {
       const a = angle + rand(-W.spread * 0.85, W.spread * 0.85), v = range * rand(2.6, 3.0), life = rand(0.5, 0.6);
       particles.push({ x: p.x + Math.cos(angle) * 30, y: p.y + Math.sin(angle) * 30, vx: Math.cos(a) * v, vy: Math.sin(a) * v,
-        life, max: life, color: ['#ffdf6b', '#ffb340', '#ff9d3b', '#ff7a2a', '#ff5a2a'][k], size: rand(5, 9), drag: 0.97, grow: true });
+        life, max: life, color: ['#ffdf6b', '#ffb340', '#ff9d3b', '#ff7a2a', '#ff5a2a'][k % 5], size: rand(10, 18), drag: 0.97, grow: true });
     }
     for (const r of robots.slice()) {
       const d = Math.hypot(r.x - p.x, r.y - p.y); if (d > range + r.r) continue;
