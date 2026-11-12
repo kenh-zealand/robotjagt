@@ -81,6 +81,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.52', d: '12-11-2026', items: ['Boss, miniboss og ultra-boss smadrer dine vægge, så snart de rører dem', 'Bygger du dig inde i en kasse, finder alle robotter dig og tager den hurtigste vej – også gennem væggene, hvis det går hurtigere end en lang omvej'] },
   { v: '1.51', d: '12-11-2026', items: ['De første 3 minibosser i en runde har det gamle liv (2500 i stedet for 7500)'] },
   { v: '1.50', d: '12-11-2026', items: ['Admin: vælg selv antal nedlagte robotter (0–999.999)'] },
   { v: '1.49', d: '12-11-2026', items: ['Svær: du kan ikke længere gå igennem dine egne vægge'] },
@@ -193,7 +194,7 @@ const CFG = {
   startMaterials: 3,
   wallHp: 1500,         // liv pr. bygget væg
   buildRange: 340,      // hvor langt væk man kan bygge
-  wallPathCost: 30,     // hvor meget robotter hellere vil gå udenom end skyde sig igennem
+  wallPathCost: 10,     // en væg 'koster' ca. 10 felters omvej (det tager ca. lige så lang tid at skyde den i stykker) – så vælger robotterne den hurtigste vej
   hearRange: 650,       // robotter hører dig inden for denne afstand (ikke når du er i en busk)
   weaponFirst: 90,      // første våben dukker op efter 90 sek. (3 gange sjældnere fra v1.33)
   weaponEvery: [120, 165],// derefter et sjældent våben hvert 2–2¾ minut
@@ -393,7 +394,22 @@ const flow = new Float64Array(GW * GH); // fuld præcision – med Float32 blev 
 let flowDirty = true, flowTimer = 0, materials = 0, matTimer = 0, buildMode = false;
 const cellOf = (x, y) => clamp(Math.floor(y / GS), 0, GH - 1) * GW + clamp(Math.floor(x / GS), 0, GW - 1);
 
+// Er spilleren lukket inde af sine egne vægge? (kan ikke nå mere end en lille del af banen uden at gå gennem vægge)
+let playerEnclosed = false;
+function checkEnclosed() {
+  const start = cellOf(player.x, player.y), seen = new Uint8Array(GW * GH), queue = [start]; seen[start] = 1;
+  for (let qi = 0; qi < queue.length && queue.length < 250; qi++) {
+    const i = queue[qi], cx = i % GW, cy = (i / GW) | 0;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = cx + dx, ny = cy + dy; if (nx < 0 || ny < 0 || nx >= GW || ny >= GH) continue;
+      const j = ny * GW + nx; if (seen[j] || staticBlocked[j] || builtAt[j]) continue;
+      seen[j] = 1; queue.push(j);
+    }
+  }
+  playerEnclosed = queue.length < 250;
+}
 function computeFlow() {
+  checkEnclosed();
   flow.fill(Infinity);
   const start = cellOf(player.x, player.y), heap = [];
   const push = (c, i) => { heap.push([c, i]); let k = heap.length - 1; while (k > 0) { const q = (k - 1) >> 1; if (heap[q][0] <= heap[k][0]) break; [heap[q], heap[k]] = [heap[k], heap[q]]; k = q; } };
@@ -1415,6 +1431,13 @@ function updateRobots(dt) {
       if (r.teleCd <= 0 && (r.state !== 'wander' || Math.random() < 0.4)) { r.teleT = 0.45; r.teleCd = rand(2.5, 4); continue; }
     }
     const d = dist(r, player);
+    // Bosser smadrer dine vægge, så snart de rører dem
+    if (r.type === 'boss' || r.type === 'mini' || r.type === 'ultra') {
+      builtInBox(r.x - r.r - 8, r.y - r.r - 8, r.x + r.r + 8, r.y + r.r + 8, w => {
+        if (circleHitsRect(r.x, r.y, r.r + 6, w)) { damageWall(w, w.hp + 1, true); shake = Math.max(shake, 4); }
+        return false;
+      });
+    }
     if (r.type === 'ultra') { updateUltra(r, dt, d); continue; }
     const visible = !player.hidden || player.reveal > 0 || d < CFG.closeSight;
     const sees = d < CFG.robotView && visible && losRobot(r, player);
@@ -1529,7 +1552,7 @@ function updateRobots(dt) {
     } else {
       r.fireCd = Math.max(0.3, r.fireCd - dt);
       // robotterne hører dig, hvis du ikke gemmer dig i en busk
-      if (!player.hidden && d < CFG.hearRange) { r.lastSeen = { x: player.x, y: player.y }; r.searchT = Math.max(r.searchT, 4); }
+      if ((!player.hidden && d < CFG.hearRange) || playerEnclosed) { r.lastSeen = { x: player.x, y: player.y }; r.searchT = Math.max(r.searchT, 4); } // gemmer du dig i en kasse, finder alle robotter dig
       if (r.lastSeen) {
         r.state = 'search'; r.searchT -= dt;
         if (r.wallTarget) r.searchT = Math.max(r.searchT, 2);
