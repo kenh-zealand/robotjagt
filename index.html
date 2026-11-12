@@ -82,6 +82,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.56', d: '12-11-2026', items: ['🤡 Ny spiltilstand: Aprilsnar – alt skyder granater, der eksploderer, hvor de rammer. Runderne kommer ikke på highscore'] },
   { v: '1.55', d: '12-11-2026', items: ['Miniboss, boss og ultra-boss smadrer med det samme alle dine vægge inden for 3 spillerbredder', 'Flammerobotternes flammer er dobbelt så store, så de passer til, hvor langt de rækker'] },
   { v: '1.54', d: '12-11-2026', items: ['Der kan ligge ubegrænset mange granater på banen på samme tid, og der er ingen grænse for, hvor mange du kan have'] },
   { v: '1.53', d: '12-11-2026', items: ['Regnbue-skinnet er gjort meget flottere: holografisk regnbue i to lag, lysende glorie, glans, kredsende lys og et regnbuespor, når du løber', 'Med regnbue-skin bliver dit våben også regnbuefarvet'] },
@@ -217,6 +218,7 @@ const CFG = {
   ultraMeteorDamage: 450,
   ultraMeteorRadius: 85,
   grenadeDamage: 10000, // granat: 10.000 skade
+  aprilRadius: 70,      // aprilsnar: sprængradius for hvert skud
   grenadeRadius: 440,   // dobbelt så stor som super-missilets eksplosion (220)
   grenadesPerPickup: 3, // man får 3 granater, når man samler en op
   grenadeFirst: 120,    // lige så sjældne som våben: første efter 2 min.
@@ -1646,8 +1648,16 @@ function updateBullets(dt) {
         for (const r of robots) if (Math.hypot(r.x - b.x, r.y - b.y) < r.r + 4) { hitRobot(r, b); dead = true; break; }
       } else if (Math.hypot(player.x - b.x, player.y - b.y) < player.r + (b.plasma ? 14 : b.big ? 8 : 4)) { hitPlayer(b.dmg); dead = true; if (b.plasma) { burst(b.x, b.y, '#7dffcf', 18, 260); rings.push({ x: b.x, y: b.y, t: 0.25, tele: true }); } }
     }
-    if (dead) bullets.splice(i, 1);
+    if (dead) { if (aprilMode && !b.plasma) aprilBoom(b); bullets.splice(i, 1); }
   }
+}
+// 🤡 Aprilsnar: hvert skud er en lille granat, der eksploderer, hvor den rammer eller lander
+function aprilBoom(b) {
+  const R = CFG.aprilRadius, x = b.x, y = b.y;
+  burst(x, y, '#ffdf6b', 14, 320); burst(x, y, '#ff7a2a', 12, 260); burst(x, y, '#5a5f66', 8, 220);
+  rings.push({ x, y, t: 0, april: true }); shake = Math.max(shake, b.owner === 'p' ? 2 : 4);
+  if (b.owner === 'p') { for (const r of robots.slice()) if (Math.hypot(r.x - x, r.y - y) < R + r.r) damageRobot(r, b.dmg * 0.6, r.x, r.y, true); }
+  else if (Math.hypot(player.x - x, player.y - y) < R + player.r) hitPlayer(b.dmg * 0.6, true);
 }
 function updateParticles(dt) {
   if (particles.length > CFG.maxParticles) particles.splice(0, particles.length - CFG.maxParticles); // loft over effekter, så telefoner ikke går i stå
@@ -1740,7 +1750,11 @@ function draw() {
     const a = Math.atan2(b.vy, b.vx);
     ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(a);
     ctx.fillStyle = b.owner === 'p' ? (b.strong ? '#ff8a3d' : '#ffd86b') : b.ghost ? '#9fe8ff' : '#ff5a4a';
-    if (b.plasma) { ctx.globalAlpha = 0.35; ctx.fillStyle = '#7dffcf'; circle(0, 0, 20); ctx.fill(); ctx.globalAlpha = 1; ctx.fillStyle = '#7dffcf'; circle(0, 0, 12); ctx.fill(); ctx.fillStyle = '#ffffff'; circle(0, 0, 5); }
+    if (aprilMode && !b.plasma) { // granat der snurrer
+      ctx.rotate(time * 14); ctx.scale(1.5, 1.5); ctx.fillStyle = b.owner === 'p' ? '#4f7a3a' : '#7a3a3a'; circle(0, 0, 6); ctx.fill();
+      ctx.fillStyle = '#2a2f38'; ctx.fillRect(-2, -9, 4, 4); ctx.strokeStyle = '#c9d3df'; ctx.lineWidth = 1.5; circle(3, -8, 2.5); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,.35)'; circle(-2, -2, 2); }
+    else if (b.plasma) { ctx.globalAlpha = 0.35; ctx.fillStyle = '#7dffcf'; circle(0, 0, 20); ctx.fill(); ctx.globalAlpha = 1; ctx.fillStyle = '#7dffcf'; circle(0, 0, 12); ctx.fill(); ctx.fillStyle = '#ffffff'; circle(0, 0, 5); }
     else if (b.homing) { ctx.fillStyle = '#e8eaee'; rr(-8, -4, 16, 8, 3); ctx.fill(); ctx.fillStyle = '#e8323a'; ctx.beginPath(); ctx.moveTo(8, -4); ctx.lineTo(13, 0); ctx.lineTo(8, 4); ctx.fill(); }
     else if (b.big) { ctx.fillStyle = '#d94dff'; circle(0, 0, 8); ctx.fill(); ctx.fillStyle = '#f5c9ff'; circle(0, 0, 3.5); }
     else if (b.wtype === 'sniper') { ctx.fillStyle = b.strong ? '#ff8a3d' : '#bfefff'; rr(-22, -2.5, 44, 5, 2.5); }
@@ -1783,7 +1797,7 @@ function draw() {
     if (g.tele) ctx.strokeStyle = '#c58cff';
     if (g.meteor) ctx.strokeStyle = '#ff6a3a';
     if (g.grenade) ctx.strokeStyle = '#ffdf6b';
-    circle(g.x, g.y, (g.grenade ? CFG.grenadeRadius : g.tele ? 45 : g.meteor ? CFG.ultraMeteorRadius + 10 : g.small ? 200 : CFG.missileRadius + 20) * Math.min(1, f * 1.6)); ctx.stroke();
+    circle(g.x, g.y, (g.grenade ? CFG.grenadeRadius : g.april ? CFG.aprilRadius : g.tele ? 45 : g.meteor ? CFG.ultraMeteorRadius + 10 : g.small ? 200 : CFG.missileRadius + 20) * Math.min(1, f * 1.6)); ctx.stroke();
     ctx.fillStyle = 'rgba(255,170,60,.25)'; ctx.fill();
   }
   ctx.globalAlpha = 1;
@@ -2237,7 +2251,7 @@ function menu() {
   panel.innerHTML = `<h1>Robotjagt</h1><p>Overlev så mange bølger af robotter som muligt. <span style="color:#93a0b0">· v${VERSION}</span></p>
     <div class="diff">${Object.entries(DIFFS).map(([k, d]) => `<button data-d="${k}" class="${k === difficulty ? 'on' : ''}" style="${k === difficulty ? 'border-color:' + d.color : ''}">${d.name}</button>`).join('')}</div>
     <div class="diff-info">${{ easy: 'Dobbelt liv, dobbelt så hurtig genladning, robotterne er halvt så stærke. Miniboss hver 5. bølge, boss hver 20., ingen ultra-boss. Mellemrum sigter automatisk.', normal: 'Det almindelige spil.', hard: 'Du er halvt så stærk, robotterne dobbelt så stærke. Ingen genladning – find skud og træ på banen. Du kan ikke gå gennem dine egne vægge.' }[difficulty]}</div>
-    <div class="menu-btns"><button id="go">Start spil</button><button class="sec" id="admstart">⚙ Admin-tilstand</button><button class="sec" id="hsnow">🏆 Highscore</button><button class="sec" id="codesnow">🔑 Koder</button><button class="sec" id="lognow">Ændringslog</button></div>${pendingSkin ? (pendingSkin === 'diamond' ? '<p class="tip" style="color:#9fefff">💎 Diamant-skin er klar til næste runde</p>' : pendingSkin === 'rainbow' ? '<p class="tip" style="color:#8fd0ff">🌈 Regnbue-skin er klar til næste runde</p>' : pendingSkin === 'flame' ? '<p class="tip" style="color:#ff8a3a">🔥 Flamme-skin er klar til næste runde</p>' : pendingSkin === 'angel' ? '<p class="tip" style="color:#fff3b0">😇 Engle-skin er klar til næste runde</p>' : '<p class="tip" style="color:#ffd84a">✨ Guld-skin er klar til næste runde</p>') : ''}
+    <div class="menu-btns"><button id="go">Start spil</button><button class="sec" id="admstart">⚙ Admin-tilstand</button><button class="sec" id="aprilstart">🤡 Aprilsnar</button><button class="sec" id="hsnow">🏆 Highscore</button><button class="sec" id="codesnow">🔑 Koder</button><button class="sec" id="lognow">Ændringslog</button></div>${pendingSkin ? (pendingSkin === 'diamond' ? '<p class="tip" style="color:#9fefff">💎 Diamant-skin er klar til næste runde</p>' : pendingSkin === 'rainbow' ? '<p class="tip" style="color:#8fd0ff">🌈 Regnbue-skin er klar til næste runde</p>' : pendingSkin === 'flame' ? '<p class="tip" style="color:#ff8a3a">🔥 Flamme-skin er klar til næste runde</p>' : pendingSkin === 'angel' ? '<p class="tip" style="color:#fff3b0">😇 Engle-skin er klar til næste runde</p>' : '<p class="tip" style="color:#ffd84a">✨ Guld-skin er klar til næste runde</p>') : ''}
     ${portrait ? '<p class="tip">📱 Spillet er bedst, når du vender telefonen på langs.</p>' : ''}
     ${TOUCH && !canFullscreen() ? '<p class="tip">Tip: Del → "Føj til hjemmeskærm" giver fuld skærm.</p>' : ''}
     <details ${TOUCH ? '' : 'open'}><summary>Sådan spiller du</summary>
@@ -2278,15 +2292,17 @@ ${controls}
     </ul>
     </details>`;
   overlay.classList.remove('hidden');
-  document.getElementById('go').onclick = () => { if (TOUCH) goFullscreen(); start(false); };
-  document.getElementById('admstart').onclick = () => { if (TOUCH) goFullscreen(); start(true); };
+  document.getElementById('go').onclick = () => { if (TOUCH) goFullscreen(); aprilMode = false; start(false); };
+  document.getElementById('admstart').onclick = () => { if (TOUCH) goFullscreen(); aprilMode = false; start(true); };
+  document.getElementById('aprilstart').onclick = () => { if (TOUCH) goFullscreen(); aprilMode = true; start(false); };
   document.getElementById('lognow').onclick = openLog;
   document.getElementById('hsnow').onclick = () => openHighscore('menu');
   document.getElementById('codesnow').onclick = openCodes;
   panel.querySelectorAll('[data-d]').forEach(b => b.onclick = () => { difficulty = b.dataset.d; try { localStorage.setItem('robotjagt_diff', difficulty); } catch (e) {} menu(); });
 }
 // admin = true: admin-tilstand – alle har admin uden kode, men runden tæller ikke på highscore
-function start(admin) { D = DIFFS[difficulty]; reset(); if (!D.autoReload) player.ammo = CFG.hardStartAmmo; if (!D.autoMats) materials = CFG.startMaterials; player.skin = pendingSkin; if (player.skin === 'flame') player.dmgMul += 0.1; if (player.skin === 'angel') { player.dmgMul += 2; player.speedMul = 2; player.reloadMul = 2; player.revives = 1; } pendingSkin = null; adminFree = false; secretBuf = ''; for (const k in cheats) cheats[k] = false; adminMode = !!admin; usedAdmin = adminMode; state = 'play'; overlay.classList.add('hidden'); last = performance.now(); }
+let aprilMode = false; // 🤡 aprilsnar: alt skyder granater – runden tæller ikke på highscore
+function start(admin) { D = DIFFS[difficulty]; reset(); if (!D.autoReload) player.ammo = CFG.hardStartAmmo; if (!D.autoMats) materials = CFG.startMaterials; player.skin = pendingSkin; if (player.skin === 'flame') player.dmgMul += 0.1; if (player.skin === 'angel') { player.dmgMul += 2; player.speedMul = 2; player.reloadMul = 2; player.revives = 1; } pendingSkin = null; adminFree = false; secretBuf = ''; for (const k in cheats) cheats[k] = false; adminMode = !!admin; usedAdmin = adminMode; state = 'play'; overlay.classList.add('hidden'); last = performance.now(); if (aprilMode) popups.push({ x: player.x, y: player.y - 70, text: '🤡 APRILSNAR – alt skyder granater!', color: '#ff9de2', t: -1 }); }
 function pause() {
   state = 'pause'; mouse.down = false; keys.clear();
   showPanel(`<h1>Pause</h1><p>Bølge ${wave} · ${kills} robotter nedlagt</p>`, 'Fortsæt', resume);
@@ -2394,6 +2410,9 @@ async function gameOverPanel() {
     const ga = document.getElementById('goadmin'); if (ga) ga.onclick = () => { if (TOUCH) goFullscreen(); start(true); };
     const gn = document.getElementById('gonormal'); if (gn) gn.onclick = () => { if (TOUCH) goFullscreen(); start(false); };
   };
+  if (aprilMode) { // aprilsnar-runder kommer ikke på highscore
+    panel.innerHTML = head + '<p class="muted">🤡 Aprilsnar-runder kommer ikke på highscore.</p>' + btns; overlay.classList.remove('hidden'); wire(); return;
+  }
   panel.innerHTML = head + '<p class="muted">Henter highscore…</p>'; overlay.classList.remove('hidden');
   const list = await Promise.race([hsLoad(board), new Promise(r => setTimeout(() => r(null), 5000))]);
   if (state !== 'over') return;
