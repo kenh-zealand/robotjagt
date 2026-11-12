@@ -75,6 +75,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.39', d: '12-11-2026', items: ['Rettet: et lille flueben i admin-panelet forsvandt, når man åbnede panelet igen'] },
   { v: '1.38', d: '12-11-2026', items: ['☠ Ultra-boss hver 20. bølge: 5 gange bossens liv, meteorer, plasmakugler, 3 flammekastere, 2 save og målsøgende missiler. Under halvt liv går den amok, bliver hurtigere og kalder teleport-robotter', 'Bossen har 5 gange så meget liv, og minibossen 3 gange', 'Man kan have op til 50 byggematerialer', 'Admin: gå til bølge 1–999 og lav en ultra-boss', 'En ny hemmelig kode giver et animeret regnbue-skin i næste runde'] },
   { v: '1.37', d: '12-11-2026', items: ['Flammekasterens flamme ser nu lige så lang ud, som den rammer'] },
   { v: '1.36', d: '12-11-2026', items: ['Flammekasteren (dit våben) gør 3 gange så meget skade'] },
@@ -2116,7 +2117,7 @@ function secretKey(k) {
   secretBuf = (secretBuf + k.toLowerCase()).slice(-13);
   if (secretBuf.length === 13 && codeHash(secretBuf) === 3455178964) {
     adminFree = true; usedAdmin = false; secretBuf = '';
-    const el = document.getElementById('admmsg'); if (el) el.textContent = '✓';
+    if (state === 'admin') adminControls(); // viser ✓ ved overskriften resten af runden
   }
 }
 function codeOk(t) { let h = 5381; for (const c of t.trim().toLowerCase()) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0; return h === 624971967; }
@@ -2145,7 +2146,7 @@ function adminLogin() {
 }
 function adminToast(t) { const el = document.getElementById('admmsg'); if (el) el.textContent = t; }
 function adminControls() {
-  panel.innerHTML = `<h1>⚙ Admin</h1>
+  panel.innerHTML = `<h1>⚙ Admin${adminFree ? ' <span id="admok" style="color:#6fe39a;font-size:20px">✓</span>' : ''}</h1>
     <div class="adm-h">Snyd</div>
     <div class="admin-grid">
       <button data-a="god" class="${cheats.god ? 'on' : ''}">Udødelig: ${cheats.god ? 'TIL' : 'FRA'}</button>
