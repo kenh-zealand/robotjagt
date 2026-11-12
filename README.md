@@ -21,6 +21,8 @@ Spillet virker både på computer og telefon. På telefonen går det i fuld skæ
 
 ## Indhold
 
+- Sværhedsgrader: Let, Normal og Svær (på Svær skal du finde skud og træ på banen)
+
 - 3000 liv og 3 skud, der lader op af sig selv
 - Regenerering: 20 % liv pr. sekund efter 5 sekunder uden skade
 - Buske, som robotterne ikke kan se dig i
@@ -32,7 +34,7 @@ Spillet virker både på computer og telefon. På telefonen går det i fuld skæ
 - Super: et målsøgende missil efter hver 10. træffer
 - Granater (sjældne, 3 ad gangen): 10.000 skade i et kæmpe område
 - Powerups: helbredelse, dobbelt skade, super, hurtig genladning, +500 max liv, +1 skud, +25 % skade og +25 % skudhastighed
-- Highscore-tavle med top 10 (fælles for alle på keha.dk/robotjagt). Runder hvor admin-panelet er brugt, kommer ikke på
+- Highscore-tavler med top 10 for Let, Normal, Svær og Admin (fælles for alle på keha.dk/robotjagt). Runder hvor admin-panelet er brugt, kommer ikke på
 - Admin-panel med kode
 - Ændringslog i spillet (klik på versionsnummeret nederst til venstre)
 

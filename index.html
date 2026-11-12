@@ -37,6 +37,10 @@
   details{text-align:left;margin-top:12px;border-top:1px solid #2c3644;padding-top:8px}
   summary{cursor:pointer;font-weight:700;color:#dfe7f1;padding:6px 0}
   .tip{font-size:13px;color:#93a0b0;margin:8px 0 0}
+  .diff{display:flex;gap:6px;justify-content:center;margin:12px 0 4px}
+  .diff button{margin:0;padding:8px 16px;font-size:15px;background:#232b35;color:#c9d3df;border:2px solid transparent}
+  .diff button.on{background:#2c3644;color:#fff}
+  .diff-info{font-size:13px;color:#93a0b0;margin:2px 0 6px;min-height:18px}
   table.hs{width:100%;border-collapse:collapse;margin:10px 0;font-size:15px}
   table.hs th{font-size:11px;color:#93a0b0;text-transform:uppercase;letter-spacing:.5px;text-align:left;padding:4px 6px;font-weight:700}
   table.hs td{padding:6px;border-top:1px solid #2c3644;text-align:left}
@@ -75,6 +79,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.47', d: '12-11-2026', items: ['Tre sværhedsgrader på startskærmen: Let, Normal og Svær', 'Let: dobbelt liv, dobbelt så hurtig genladning, robotterne er halvt så stærke. Miniboss hver 5. bølge, boss hver 20., ingen ultra-boss. Mellemrum sigter automatisk på nærmeste robot', 'Svær: du er halvt så stærk, robotterne dobbelt så stærke. Ingen genladning og ingen gratis byggemateriale – find skud-kasser og trækasser på banen', 'Highscore-tavle for hver sværhedsgrad – plus en Admin-tavle til runder med admin', 'Genladning: kun et rigtigt skud sætter genladningen på pause – man kan lade op, selvom man spammer knappen'] },
   { v: '1.46', d: '12-11-2026', items: ['En ny hemmelig kode giver et diamant-skin i næste runde'] },
   { v: '1.45', d: '12-11-2026', items: ['Tryk E igen for at lukke admin-panelet'] },
   { v: '1.44', d: '12-11-2026', items: ['Mellemrum skyder nu der, hvor du sigter med musen – ikke automatisk på den nærmeste robot'] },
@@ -200,6 +205,9 @@ const CFG = {
   grenadeRadius: 440,   // dobbelt så stor som super-missilets eksplosion (220)
   grenadesPerPickup: 3, // man får 3 granater, når man samler en op
   grenadeFirst: 120,    // lige så sjældne som våben: første efter 2 min.
+  hardStartAmmo: 15,    // Svær: du starter med 15 skud og lader ikke selv op
+  hardAmmoPickup: 8,    // Svær: en skud-kasse giver 8 skud
+  hardWoodPickup: 5,    // Svær: en trækasse giver 5 byggematerialer
   maxPowerups: 4,       // højst så mange powerups på banen ad gangen
   healAmount: 1200,     // helbredelse: +1200 liv
   buffTime: 10,         // skade- og genladnings-powerup varer 10 sek.
@@ -230,6 +238,18 @@ const WEAPONS = {
   // Flammekaster: brænder alle robotter i en kegle foran dig. 3 gange sjældnere end de andre våben.
   flamer:  { name: 'Flammekaster', short: 'FLAMME', color: '#ff6a2a', dmg: 1.08, gap: 0.05, reload: 1, cost: 0.1 / 3, pellets: 0, spread: 0.7, range: 0.68, speed: 0, superGain: 0.1, auto: true, flame: true }
 };
+
+// ---------- Sværhedsgrader ----------
+const DIFFS = {
+  easy:   { name: 'Let',    color: '#6fe39a', playerHp: 2,   playerDmg: 1,   reload: 2, robotHp: 0.5, robotDmg: 0.5, ultra: false, miniEvery: 5, bossEvery: 20, autoReload: true,  autoMats: true, spaceAutoAim: true },
+  normal: { name: 'Normal', color: '#c9d3df', playerHp: 1,   playerDmg: 1,   reload: 1, robotHp: 1,   robotDmg: 1,   ultra: true,  miniEvery: 1, bossEvery: 5,  autoReload: true,  autoMats: true },
+  hard:   { name: 'Svær',   color: '#ff6b5b', playerHp: 0.5, playerDmg: 0.5, reload: 1, robotHp: 2,   robotDmg: 2,   ultra: true,  miniEvery: 1, bossEvery: 5,  autoReload: false, autoMats: false }
+};
+// Highscore-tavler: én pr. sværhedsgrad + én for runder med admin
+const BOARDS = { easy: DIFFS.easy, normal: DIFFS.normal, hard: DIFFS.hard, admin: { name: 'Admin', color: '#ffd84a' } };
+let difficulty = 'normal';
+try { const d = localStorage.getItem('robotjagt_diff'); if (DIFFS[d]) difficulty = d; } catch (e) {}
+let D = DIFFS[difficulty];
 
 // ---------- Hjælpere ----------
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
@@ -424,7 +444,7 @@ function navigate(r, tx, ty, step) {
   }
   r.angle = Math.atan2(n.y - r.y, n.x - r.x); moveDir(r, n.x - r.x, n.y - r.y, step);
 }
-function waveDmgMul() { return 1 + CFG.dmgPerWave * (Math.max(1, wave) - 1); }
+function waveDmgMul() { return (1 + CFG.dmgPerWave * (Math.max(1, wave) - 1)) * D.robotDmg; }
 function damageWall(w, dmg, raw) {
   if (!builtAt[w.i]) return;
   w.hp -= raw ? dmg : dmg * waveDmgMul(); w.flash = 0.1;
@@ -507,11 +527,11 @@ const cam = { x: 0, y: 0 };
 let best = 0; try { best = +localStorage.getItem('robotjagt_best') || 0; } catch (e) {}
 
 function reset() {
-  player = { x: 1100, y: 950, r: 18, hp: CFG.playerMaxHp, maxHp: CFG.playerMaxHp, dmgMul: 1, rateMul: 1, ammo: CFG.maxAmmo, maxAmmo: CFG.maxAmmo, weapon: 'pistol', inventory: ['pistol'], grenades: 0, lastHit: -99, fireCd: 0, angle: -Math.PI / 2, flash: 0, hidden: null, reveal: 0 };
+  player = { x: 1100, y: 950, r: 18, hp: CFG.playerMaxHp * D.playerHp, maxHp: CFG.playerMaxHp * D.playerHp, dmgMul: 1, rateMul: 1, ammo: CFG.maxAmmo, maxAmmo: CFG.maxAmmo, weapon: 'pistol', inventory: ['pistol'], grenades: 0, lastHit: -99, fireCd: 0, angle: -Math.PI / 2, flash: 0, hidden: null, reveal: 0 };
   robots = []; bullets = []; particles = []; missiles = []; rings = []; superCharge = 0;
   powerups = []; popups = []; powerTimer = 3; ammoTimer = 12; maxHpTimer = 20; permDmgTimer = 22; permRateTimer = 36; buffs = { damage: 0, reload: 0 };
   wave = 0; kills = 0; time = 0; waveTimer = 1.2; shake = 0;
-  weaponDrops = []; weaponTimer = CFG.weaponFirst; meteors = []; grenadeDrops = []; grenadeTimer = CFG.grenadeFirst; grenadesFlying = [];
+  weaponDrops = []; weaponTimer = CFG.weaponFirst; meteors = []; supplies = []; supplyAmmoT = 1; supplyWoodT = 2; grenadeDrops = []; grenadeTimer = CFG.grenadeFirst; grenadesFlying = [];
   builtWalls = []; builtAt.fill(null); materials = CFG.startMaterials; matTimer = 0; buildMode = false; flowDirty = true; flowTimer = 0;
 }
 function banner(t) { bannerText = t; bannerT = 2.2; }
@@ -614,7 +634,7 @@ function updateUltra(r, dt, d) {
       r.summonCd = 12;
       for (let i = 0; i < 2; i++) {
         const a = rand(0, Math.PI * 2), x = clamp(r.x + Math.cos(a) * (r.r + 60), 40, WORLD.w - 40), y = clamp(r.y + Math.sin(a) * (r.r + 60), 40, WORLD.h - 40);
-        const hp = Math.round(CFG.robotHp * (1 + CFG.hpPerWave * (wave - 1)));
+        const hp = Math.round(CFG.robotHp * (1 + CFG.hpPerWave * (wave - 1)) * D.robotHp);
         robots.push({ x, y, type: 'tele', ghostOff: 0, maxHp: hp, hp, speedMul: 1, r: 22, sawCd: 0, flaming: false, state: 'chase', fireCd: 0.8,
           angle: 0, target: null, wanderT: 0, lastSeen: { x: player.x, y: player.y }, searchT: 6, lookT: 0, flash: 0, alertT: 1, strafe: 1, strafeT: 2 });
         burst(x, y, '#c58cff', 18, 240);
@@ -689,12 +709,13 @@ function drawMeteors() {
 
 function spawnWave() {
   wave++;
-  const bossWave = wave % CFG.bossEvery === 0;
-  const hm = 1 + CFG.hpPerWave * (wave - 1);
+  const bossWave = wave % D.bossEvery === 0;
+  const hm = (1 + CFG.hpPerWave * (wave - 1)) * D.robotHp;
   const n = bossWave ? Math.floor(wave / 2) : 1 + wave;
-  const ultraWave = wave % CFG.ultraEvery === 0;
+  const ultraWave = D.ultra && wave % CFG.ultraEvery === 0;
+  const miniWave = wave % D.miniEvery === 0;
   if (ultraWave) spawnUltra(hm); else if (bossWave) spawnBoss(hm);
-  spawnMini(hm);
+  if (miniWave) spawnMini(hm);
   const pool = ['gunner', 'gunner', 'saw'];
   if (wave >= 2) pool.push('flame', 'flame');
   if (wave >= 4) pool.push('saw');
@@ -711,10 +732,10 @@ function spawnWave() {
       target: null, wanderT: 0, lastSeen: null, searchT: 0, lookT: 0, flash: 0, alertT: 0,
       strafe: Math.random() < 0.5 ? 1 : -1, strafeT: rand(1, 2.5) });
   }
-  banner(wave % CFG.ultraEvery === 0 ? '☠ ULTRA BOSS – bølge ' + wave + '!' : bossWave ? 'BOSS – bølge ' + wave + '!' : 'Bølge ' + wave);
+  banner(D.ultra && wave % CFG.ultraEvery === 0 ? '☠ ULTRA BOSS – bølge ' + wave + '!' : bossWave ? 'BOSS – bølge ' + wave + '!' : 'Bølge ' + wave);
   {
-    const mk = miniKit(wave), lines = ['Miniboss: ' + kitText(mk, false)];
-    if (wave % CFG.ultraEvery === 0) lines.unshift('ULTRA BOSS: meteorer, plasmakugler, 3 flammekastere, 2 save, missiler');
+    const mk = miniKit(wave), lines = wave % D.miniEvery === 0 ? ['Miniboss: ' + kitText(mk, false)] : [];
+    if (D.ultra && wave % CFG.ultraEvery === 0) lines.unshift('ULTRA BOSS: meteorer, plasmakugler, 3 flammekastere, 2 save, missiler');
     else if (bossWave) lines.unshift('BOSS: ' + kitText(bossKit(wave), true));
     lines.forEach((t, i) => popups.push({ x: player.x, y: player.y + 60 + i * 24, text: t, color: i === 0 && bossWave ? '#d98aff' : '#8fd0ff', t: -1.6 }));
   }
@@ -816,8 +837,8 @@ function tryShoot(angle) {
   const p = player;
   const W = WEAPONS[p.weapon];
   if (p.ammo < W.cost - 1e-6 || p.fireCd > 0) return;
-  p.ammo = Math.max(0, p.ammo - W.cost); p.fireCd = W.gap / p.rateMul; p.reveal = 0.9; p.reloadPause = CFG.reloadPause / p.rateMul;
-  const dmg = CFG.shotDamage * W.dmg * p.dmgMul * (buffs.damage > 0 ? 2 : 1);
+  p.ammo = Math.max(0, p.ammo - W.cost); p.fireCd = W.gap / p.rateMul; p.reveal = 0.9; p.reloadPause = (CFG.reloadPause + W.gap) / p.rateMul; // pausen er længere end tiden til næste skud, så man ikke lader op midt i en skudserie
+  const dmg = CFG.shotDamage * W.dmg * p.dmgMul * D.playerDmg * (buffs.damage > 0 ? 2 : 1);
   if (W.flame) { // flammekaster: skade på alle robotter i keglen foran dig
     const range = cheats.range ? 900 : CFG.bulletRange * W.range;
     // flammerne skal række lige så langt som skaden (med drag 0.97 og ~0,55 sek. liv flyver de ca. 0,35 × fart)
@@ -988,10 +1009,11 @@ function applyPowerup(t, admin) {
   const p = player;
   if (t === 'heal') p.hp = Math.min(p.maxHp, p.hp + CFG.healAmount);
   if (t === 'damage') buffs.damage = admin ? buffs.damage + CFG.buffTime : CFG.buffTime;
-  if (t === 'reload') { buffs.reload = admin ? buffs.reload + CFG.buffTime : CFG.buffTime; p.ammo = p.maxAmmo; }
+  if (t === 'reload') { buffs.reload = admin ? buffs.reload + CFG.buffTime : CFG.buffTime; p.ammo = D.autoReload ? p.maxAmmo : p.ammo + CFG.hardAmmoPickup; }
   if (t === 'permdmg') p.dmgMul += CFG.permDmgBonus;
   if (t === 'permrate') p.rateMul += CFG.permRateBonus;
   if (t === 'maxhp') { p.maxHp = admin ? p.maxHp + CFG.maxHpBonus : Math.min(CFG.maxHpCap, p.maxHp + CFG.maxHpBonus); p.hp = Math.min(p.maxHp, p.hp + CFG.maxHpBonus); }
+  if (t === 'ammo' && !D.autoReload) { p.ammo += 3; return; } // Svær: grøn krystal giver 3 skud
   if (t === 'ammo') { p.maxAmmo = admin ? p.maxAmmo + 1 : Math.min(CFG.ammoCap, p.maxAmmo + 1); p.ammo = Math.min(p.maxAmmo, p.ammo + 1); }
   if (t === 'super') { if (superCharge < CFG.superHits) banner('SUPER KLAR!'); superCharge = CFG.superHits; }
 }
@@ -1037,7 +1059,7 @@ function updatePowerups(dt) {
 function giveWeapon(t) {
   const p = player;
   if (!p.inventory.includes(t)) p.inventory.push(t);
-  p.weapon = t; p.ammo = p.maxAmmo; p.fireCd = 0;
+  p.weapon = t; if (D.autoReload) p.ammo = p.maxAmmo; p.fireCd = 0;
 }
 function selectSlot(n) {
   const p = player, t = p.inventory[n];
@@ -1086,6 +1108,47 @@ function spawnWeaponDrop(type, x, y) {
   weaponDrops.push({ type, x, y, t: 0 });
   popups.push({ x: player.x, y: player.y - 70, text: 'Et sjældent våben er dukket op: ' + WEAPONS[type].name + '!', color: WEAPONS[type].color, t: -0.4 });
 }
+// ---------- Svær: skud- og trækasser på banen ----------
+let supplies = [], supplyAmmoT = 0, supplyWoodT = 0;
+function spawnSupply(type) {
+  for (let i = 0; i < 40; i++) {
+    const pt = randomFreePoint();
+    if (Math.hypot(pt.x - player.x, pt.y - player.y) < 180) continue;
+    if (supplies.some(o => Math.hypot(o.x - pt.x, o.y - pt.y) < 150)) continue;
+    supplies.push({ type, x: pt.x, y: pt.y, t: rand(0, 6) }); return;
+  }
+}
+function updateSupplies(dt) {
+  if (D.autoReload && D.autoMats) { supplies.length = 0; return; }
+  supplyAmmoT -= dt; supplyWoodT -= dt;
+  if (!D.autoReload && supplyAmmoT <= 0) { if (supplies.filter(o => o.type === 'ammo').length < 4) spawnSupply('ammo'); supplyAmmoT = rand(4, 6); }
+  if (!D.autoMats && supplyWoodT <= 0) { if (supplies.filter(o => o.type === 'wood').length < 3) spawnSupply('wood'); supplyWoodT = rand(6, 9); }
+  for (let i = supplies.length - 1; i >= 0; i--) {
+    const o = supplies[i]; o.t += dt;
+    if (Math.hypot(o.x - player.x, o.y - player.y) < player.r + 20) {
+      if (o.type === 'ammo') { player.ammo += CFG.hardAmmoPickup; popups.push({ x: player.x, y: player.y - 40, text: `+${CFG.hardAmmoPickup} skud`, color: '#f0a33a', t: 0.3 }); }
+      else { materials = Math.min(CFG.maxMaterials, materials + CFG.hardWoodPickup); popups.push({ x: player.x, y: player.y - 40, text: `+${CFG.hardWoodPickup} byggemateriale`, color: '#e6c08a', t: 0.3 }); }
+      burst(o.x, o.y, o.type === 'ammo' ? '#f0a33a' : '#c9a06a', 14, 200);
+      supplies.splice(i, 1);
+    }
+  }
+}
+function drawSupplies() {
+  for (const o of supplies) {
+    const bob = Math.sin(o.t * 3) * 3;
+    ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(o.x, o.y + 16, 16, 6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.save(); ctx.translate(o.x, o.y + bob);
+    if (o.type === 'ammo') {
+      ctx.fillStyle = '#3d4a2a'; rr(-15, -11, 30, 22, 4); ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#1e2614'; ctx.stroke();
+      ctx.fillStyle = '#f0a33a'; for (const bx of [-8, -1, 6]) { rr(bx, -7, 4, 12, 2); ctx.fill(); }
+    } else {
+      ctx.fillStyle = '#9a6a38'; rr(-15, -13, 30, 26, 3); ctx.fill(); ctx.lineWidth = 2.5; ctx.strokeStyle = '#5e3d1c'; ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-15, -13); ctx.lineTo(15, 13); ctx.moveTo(15, -13); ctx.lineTo(-15, 13); ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
 // ---------- Granater ----------
 let grenadeDrops = [], grenadeTimer = 0, grenadesFlying = [];
 function updateGrenades(dt) {
@@ -1131,7 +1194,7 @@ function explodeGrenade(x, y) {
   const R = CFG.grenadeRadius;
   shake = Math.max(shake, 20); rings.push({ x, y, t: 0, grenade: true });
   burst(x, y, '#ffdf6b', 60, 700); burst(x, y, '#ff7a2a', 60, 560); burst(x, y, '#9be36f', 20, 400); burst(x, y, '#5a5f66', 40, 420);
-  for (const r of robots.slice()) if (Math.hypot(r.x - x, r.y - y) < R + r.r) damageRobot(r, CFG.grenadeDamage, r.x, r.y);
+  for (const r of robots.slice()) if (Math.hypot(r.x - x, r.y - y) < R + r.r) damageRobot(r, CFG.grenadeDamage * D.playerDmg, r.x, r.y);
 }
 function drawGrenadeIcon(x, y, s) {
   ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
@@ -1222,13 +1285,13 @@ function explode(x, y) {
   rings.push({ x, y, t: 0 });
   burst(x, y, '#ffdf6b', 40, 520); burst(x, y, '#ff7a2a', 40, 420); burst(x, y, '#5a5f66', 30, 300);
   for (const r of robots.slice()) {
-    if (Math.hypot(r.x - x, r.y - y) < CFG.missileRadius + r.r) damageRobot(r, r.maxHp * (r.type === 'ultra' ? 0.03 : r.type === 'boss' ? 0.08 : r.type === 'mini' ? 0.2 : 0.75), r.x, r.y);
+    if (Math.hypot(r.x - x, r.y - y) < CFG.missileRadius + r.r) damageRobot(r, D.playerDmg * r.maxHp * (r.type === 'ultra' ? 0.03 : r.type === 'boss' ? 0.08 : r.type === 'mini' ? 0.2 : 0.75), r.x, r.y);
   }
 }
 
 function hitPlayer(dmg, quiet) {
   if (state !== 'play' || cheats.god) return;
-  dmg *= 1 + CFG.dmgPerWave * (wave - 1);
+  dmg *= (1 + CFG.dmgPerWave * (wave - 1)) * D.robotDmg;
   player.hp -= dmg; player.lastHit = time;
   if (quiet) { player.flash = Math.max(player.flash, 0.07); shake = Math.max(shake, 2); }
   else { player.flash = 0.18; shake = Math.max(shake, 6); burst(player.x, player.y, '#ff6b6b', 8, 200); }
@@ -1247,11 +1310,12 @@ function update(dt) {
   time += dt;
   if (robots.length === 0) { waveTimer -= dt; if (waveTimer <= 0) { spawnWave(); waveTimer = 2.5; } }
   matTimer += dt;
+  if (!D.autoMats) matTimer = 0; // Svær: byggematerialer findes kun på banen
   while (matTimer >= CFG.materialEvery) { matTimer -= CFG.materialEvery; if (materials < CFG.maxMaterials) materials++; }
   for (const w of builtWalls) w.flash = Math.max(0, w.flash - dt);
   flowTimer -= dt;
   if (robots.length && (flowDirty || flowTimer <= 0)) { computeFlow(); flowDirty = false; flowTimer = 0.25; }
-  updatePlayer(dt); updatePowerups(dt); updateWeaponDrops(dt); updateGrenades(dt); updateRobots(dt); updateBullets(dt); updateMissiles(dt); updateMeteors(dt);
+  updatePlayer(dt); updatePowerups(dt); updateWeaponDrops(dt); updateGrenades(dt); updateSupplies(dt); updateRobots(dt); updateBullets(dt); updateMissiles(dt); updateMeteors(dt);
   if (bannerT > 0) bannerT -= dt;
 }
 
@@ -1284,7 +1348,8 @@ function updatePlayer(dt) {
 
   // Automatisk sigte: mellemrum (eller når musen ikke bruges) sigter mod nærmeste robot man kan se
   // Mellemrum skyder hvor du sigter. Automatisk sigte bruges kun, når der ikke sigtes med mus eller tommel
-  const autoTarget = (!mouse.active && !touch.aim) ? nearestVisibleRobot() : null;
+  // Let: mellemrum sigter automatisk på nærmeste robot
+  const autoTarget = ((!mouse.active && !touch.aim) || (D.spaceAutoAim && keys.has('Space'))) ? nearestVisibleRobot() : null;
   if (autoTarget) {
     p.angle = Math.atan2(autoTarget.y - p.y, autoTarget.x - p.x);
   } else if (touch.aim) {
@@ -1296,13 +1361,11 @@ function updatePlayer(dt) {
   }
 
   p.fireCd = Math.max(0, p.fireCd - dt);
-  const rt = (buffs.reload > 0 ? CFG.fastReload : CFG.reloadTime) / p.rateMul * WEAPONS[p.weapon].reload;
+  const rt = (buffs.reload > 0 ? CFG.fastReload : CFG.reloadTime) / p.rateMul * WEAPONS[p.weapon].reload / D.reload;
   p.reloadPause = Math.max(0, (p.reloadPause || 0) - dt);
-  // Man lader kun op, når man ikke holder skydeknappen nede – ellers ville man have uendelige skud
-  const holdingFire = mouse.down || keys.has('Space') || (touch.aim && WEAPONS[p.weapon].auto && Math.hypot(touch.aim.x - touch.aim.sx, touch.aim.y - touch.aim.sy) > 18);
-  if (holdingFire) p.reloadPause = Math.max(p.reloadPause, CFG.reloadPause / p.rateMul);
+  // Kun et rigtigt skud sætter genladningen på pause (se tryShoot) – så man kan lade op, selvom man spammer knappen
   if (cheats.ammo) p.ammo = p.maxAmmo;
-  if (p.ammo < p.maxAmmo && p.reloadPause <= 0) p.ammo = Math.min(p.maxAmmo, p.ammo + dt / rt);
+  if (D.autoReload && p.ammo < p.maxAmmo && p.reloadPause <= 0) p.ammo = Math.min(p.maxAmmo, p.ammo + dt / rt); // Svær: ingen genladning
   if (mouse.down || keys.has('Space')) tryShoot(p.angle);
   if (touch.aim && WEAPONS[p.weapon].auto && Math.hypot(touch.aim.x - touch.aim.sx, touch.aim.y - touch.aim.sy) > 18) tryShoot(p.angle); // minigun: hold tommelen for at skyde
   if (mouse.rdown) tryBuild(cam.x + mouse.x / zoom, cam.y + mouse.y / zoom, true); // hold højreklik og træk for at bygge flere
@@ -1569,6 +1632,7 @@ function draw() {
     }
   }
 
+  drawSupplies();
   drawGrenades();
   for (const wd of weaponDrops) {
     const W = WEAPONS[wd.type], bob = Math.sin(wd.t * 3) * 4, pulse = 0.5 + 0.5 * Math.sin(wd.t * 5);
@@ -1673,7 +1737,8 @@ function draw() {
     const p = player;
     bar(p.x - 28, p.y - p.r - 18, 56, 6, p.hp / player.maxHp, hpColor(p.hp / player.maxHp));
     const pw = (56 - (p.maxAmmo - 1) * 2) / p.maxAmmo;
-    for (let i = 0; i < p.maxAmmo; i++) {
+    if (!D.autoReload) { ctx.font = '800 11px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#f0a33a'; ctx.fillText(Math.floor(p.ammo + 1e-6), p.x, p.y + p.r + 11); }
+    else for (let i = 0; i < p.maxAmmo; i++) {
       const f = clamp(p.ammo - i, 0, 1), x = p.x - 28 + i * (pw + 2);
       ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(x, p.y + p.r + 8, pw, 5);
       ctx.fillStyle = f >= 1 ? '#f0a33a' : '#9a7445'; ctx.fillRect(x, p.y + p.r + 8, pw * f, 5);
@@ -1852,11 +1917,17 @@ function drawHUDInner() {
 
   // Skud
   ctx.fillStyle = WEAPONS[p.weapon].color; ctx.font = '800 11.5px system-ui,sans-serif'; ctx.fillText(WEAPONS[p.weapon].short || WEAPONS[p.weapon].name.toUpperCase(), x, y + 68);
+  if (!D.autoReload) { // Svær: antal skud i stedet for bjælker – der lades ikke op
+    ctx.font = '800 15px system-ui,sans-serif'; ctx.fillStyle = p.ammo >= 1 ? '#f0a33a' : '#ff6b5b';
+    ctx.fillText(`${Math.floor(p.ammo + 1e-6)} skud`, x + 66, y + 68);
+    ctx.font = '600 12px system-ui,sans-serif'; ctx.fillStyle = '#93a0b0'; ctx.fillText('· find skud på banen', x + 136, y + 68);
+  } else {
   const gap = p.maxAmmo > 5 ? 4 : 8, sw = (w - 66 - (p.maxAmmo - 1) * gap) / p.maxAmmo;
   for (let i = 0; i < p.maxAmmo; i++) {
     const fx = x + 66 + i * (sw + gap), af = clamp(p.ammo - i, 0, 1);
     ctx.fillStyle = '#2b333d'; rr(fx, y + 59, sw, 18, 5); ctx.fill();
     if (af > 0) { ctx.fillStyle = af >= 1 ? '#f0a33a' : '#8f6a3c'; rr(fx, y + 59, Math.max(6, sw * af), 18, Math.min(5, sw / 2)); ctx.fill(); }
+  }
   }
 
   // Super
@@ -1878,7 +1949,7 @@ function drawHUDInner() {
   ctx.fillStyle = '#9a6a38'; rr(x + 52, y + 113, 16, 16, 3); ctx.fill(); ctx.strokeStyle = '#5e3d1c'; ctx.lineWidth = 2; ctx.stroke();
   ctx.font = '800 14px system-ui,sans-serif'; ctx.fillStyle = '#fff'; ctx.fillText(`× ${materials}`, x + 74, y + 121);
   ctx.font = '600 12px system-ui,sans-serif'; ctx.fillStyle = '#93a0b0';
-  ctx.fillText(materials >= CFG.maxMaterials ? '(fuld)' : isTouch ? '· BYG-knappen' : '· højreklik for at bygge', x + 112, y + 121);
+  ctx.fillText(materials >= CFG.maxMaterials ? '(fuld)' : !D.autoMats ? '· find træ på banen' : isTouch ? '· BYG-knappen' : '· højreklik for at bygge', x + 112, y + 121);
 
   // Skjult-status
   if (p.hidden && state === 'play') {
@@ -1917,6 +1988,7 @@ function drawHUDInner() {
   const extraColors = [];
   if (p.dmgMul > 1) { lines.push(`Skade: +${Math.round((p.dmgMul - 1) * 100)} %`); extraColors.push('#c99bff'); }
   if (p.grenades > 0) { lines.push(`Granater: ${p.grenades}${isTouch ? '' : ' (F)'}`); extraColors.push('#9be36f'); }
+  if (difficulty !== 'normal') { lines.push(D.name.toUpperCase()); extraColors.push(D.color); }
   if (adminMode) { lines.push('ADMIN-TILSTAND'); extraColors.push('#ffd84a'); }
   if (p.rateMul > 1) { lines.push(`Skudhast.: +${Math.round((p.rateMul - 1) * 100)} %`); extraColors.push('#6ff0e2'); }
   ctx.fillStyle = 'rgba(13,16,20,.75)'; rr(VW - 170, 8, 162, 82 + (lines.length - 3) * 23, 12); ctx.fill();
@@ -2012,6 +2084,8 @@ function menu() {
       <li><b>Skift våben:</b> tast 1 = pistol, 2, 3 … = våbnene i den rækkefølge du samlede dem op (eller klik på dem nederst)</li>`;
   const portrait = TOUCH && VH > VW;
   panel.innerHTML = `<h1>Robotjagt</h1><p>Overlev så mange bølger af robotter som muligt. <span style="color:#93a0b0">· v${VERSION}</span></p>
+    <div class="diff">${Object.entries(DIFFS).map(([k, d]) => `<button data-d="${k}" class="${k === difficulty ? 'on' : ''}" style="${k === difficulty ? 'border-color:' + d.color : ''}">${d.name}</button>`).join('')}</div>
+    <div class="diff-info">${{ easy: 'Dobbelt liv, dobbelt så hurtig genladning, robotterne er halvt så stærke. Miniboss hver 5. bølge, boss hver 20., ingen ultra-boss. Mellemrum sigter automatisk.', normal: 'Det almindelige spil.', hard: 'Du er halvt så stærk, robotterne dobbelt så stærke. Ingen genladning – find skud og træ på banen.' }[difficulty]}</div>
     <div class="menu-btns"><button id="go">Start spil</button><button class="sec" id="admstart">⚙ Admin-tilstand</button><button class="sec" id="hsnow">🏆 Highscore</button><button class="sec" id="codesnow">🔑 Koder</button><button class="sec" id="lognow">Ændringslog</button></div>${pendingSkin ? (pendingSkin === 'diamond' ? '<p class="tip" style="color:#9fefff">💎 Diamant-skin er klar til næste runde</p>' : pendingSkin === 'rainbow' ? '<p class="tip" style="color:#8fd0ff">🌈 Regnbue-skin er klar til næste runde</p>' : '<p class="tip" style="color:#ffd84a">✨ Guld-skin er klar til næste runde</p>') : ''}
     ${portrait ? '<p class="tip">📱 Spillet er bedst, når du vender telefonen på langs.</p>' : ''}
     ${TOUCH && !canFullscreen() ? '<p class="tip">Tip: Del → "Føj til hjemmeskærm" giver fuld skærm.</p>' : ''}
@@ -2058,9 +2132,10 @@ ${controls}
   document.getElementById('lognow').onclick = openLog;
   document.getElementById('hsnow').onclick = () => openHighscore('menu');
   document.getElementById('codesnow').onclick = openCodes;
+  panel.querySelectorAll('[data-d]').forEach(b => b.onclick = () => { difficulty = b.dataset.d; try { localStorage.setItem('robotjagt_diff', difficulty); } catch (e) {} menu(); });
 }
 // admin = true: admin-tilstand – alle har admin uden kode, men runden tæller ikke på highscore
-function start(admin) { reset(); player.skin = pendingSkin; pendingSkin = null; adminFree = false; secretBuf = ''; for (const k in cheats) cheats[k] = false; adminMode = !!admin; usedAdmin = adminMode; state = 'play'; overlay.classList.add('hidden'); last = performance.now(); }
+function start(admin) { D = DIFFS[difficulty]; reset(); if (!D.autoReload) player.ammo = CFG.hardStartAmmo; if (!D.autoMats) materials = CFG.startMaterials; player.skin = pendingSkin; pendingSkin = null; adminFree = false; secretBuf = ''; for (const k in cheats) cheats[k] = false; adminMode = !!admin; usedAdmin = adminMode; state = 'play'; overlay.classList.add('hidden'); last = performance.now(); }
 function pause() {
   state = 'pause'; mouse.down = false; keys.clear();
   showPanel(`<h1>Pause</h1><p>Bølge ${wave} · ${kills} robotter nedlagt</p>`, 'Fortsæt', resume);
@@ -2095,24 +2170,28 @@ const HS_SHARED = /(^|\.)keha\.dk$/.test(location.hostname);
 const HS_URL = '/wp-json/robotjagt/v1/scores';
 const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const hsSort = (a, b) => (b.kills - a.kills) || (b.wave - a.wave);
-function hsLocal() { try { const v = JSON.parse(localStorage.getItem('robotjagt_scores') || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
-async function hsLoad() {
+// Én tavle pr. sværhedsgrad. Normal bruger den oprindelige tavle.
+const hsKey = m => m === 'normal' ? 'robotjagt_scores' : 'robotjagt_scores_' + m;
+function hsLocal(m) { try { const v = JSON.parse(localStorage.getItem(hsKey(m || difficulty)) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
+async function hsLoad(m) {
+  m = m || difficulty;
   if (HS_SHARED) {
-    try { const r = await fetch(HS_URL, { cache: 'no-store' }); if (r.ok) return (await r.json()).scores || []; } catch (e) {}
+    try { const r = await fetch(HS_URL + '?mode=' + m, { cache: 'no-store' }); if (r.ok) return (await r.json()).scores || []; } catch (e) {}
     return null; // kunne ikke hente
   }
-  return hsLocal();
+  return hsLocal(m);
 }
-async function hsSubmit(name, k, w) {
+async function hsSubmit(name, k, w, m) {
+  m = m || difficulty;
   if (HS_SHARED) {
-    const r = await fetch(HS_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, kills: k, wave: w, admin: usedAdmin }) });
+    const r = await fetch(HS_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, kills: k, wave: w, admin: usedAdmin, mode: m }) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.message || 'Kunne ikke gemme');
     return j.scores || [];
   }
-  const list = hsLocal(); list.push({ name, kills: k, wave: w, date: new Date().toISOString().slice(0, 10) });
+  const list = hsLocal(m); list.push({ name, kills: k, wave: w, date: new Date().toISOString().slice(0, 10) });
   list.sort(hsSort); const top = list.slice(0, 10);
-  try { localStorage.setItem('robotjagt_scores', JSON.stringify(top)); } catch (e) {}
+  try { localStorage.setItem(hsKey(m), JSON.stringify(top)); } catch (e) {}
   return top;
 }
 function hsQualifies(list, k, w) {
@@ -2121,8 +2200,9 @@ function hsQualifies(list, k, w) {
   const last = list[list.length - 1];
   return hsSort({ kills: k, wave: w }, last) < 0;
 }
-function hsTable(list, mark) {
-  const h = '<div class="hs-h">🏆 Top 10</div>';
+function hsTable(list, mark, m) {
+  const dm = BOARDS[m || difficulty];
+  const h = `<div class="hs-h">🏆 Top 10 – <span style="color:${dm.color}">${dm.name}</span></div>`;
   if (list === null) return h + '<p class="muted">Highscore-tavlen kunne ikke hentes lige nu.</p>';
   if (!list.length) return h + '<p class="muted">Tavlen er tom – bliv den første!</p>';
   return h + '<table class="hs"><tr><th>#</th><th>Navn</th><th class="n">Nedlagt</th><th class="n">Bølge</th></tr>' +
@@ -2130,26 +2210,29 @@ function hsTable(list, mark) {
 }
 const hsWhere = () => HS_SHARED ? 'Fælles tavle for alle på keha.dk' : 'Kun denne enhed – den fælles tavle er på <a href="https://keha.dk/robotjagt/" target="_blank" rel="noopener" style="color:#8fd0ff">keha.dk/robotjagt</a>';
 
-async function openHighscore(from) {
-  const back = from || 'menu';
+async function openHighscore(from, mode) {
+  const back = from || 'menu', m = mode || difficulty;
   state = state === 'play' ? 'pause' : state;
-  panel.innerHTML = '<h1>🏆 Highscore</h1><p class="muted">Henter…</p>';
+  const tabs = `<div class="diff">${Object.entries(BOARDS).map(([k, d]) => `<button data-hm="${k}" class="${k === m ? 'on' : ''}" style="${k === m ? 'border-color:' + d.color : ''}">${d.name}</button>`).join('')}</div>`;
+  panel.innerHTML = `<h1>🏆 Highscore</h1>${tabs}<p class="muted">Henter…</p>`;
   overlay.classList.remove('hidden');
-  const list = await hsLoad();
-  panel.innerHTML = `<h1>🏆 Highscore</h1><p class="muted">${hsWhere()} · top 10</p>${hsTable(list)}<button id="hsback">Tilbage</button>`;
+  const list = await hsLoad(m);
+  panel.innerHTML = `<h1>🏆 Highscore</h1>${tabs}<p class="muted">${hsWhere()}</p>${hsTable(list, null, m)}<button id="hsback">Tilbage</button>`;
+  panel.querySelectorAll('[data-hm]').forEach(b => b.onclick = () => openHighscore(back, b.dataset.hm));
   document.getElementById('hsback').onclick = () => back === 'over' ? gameOverPanel() : back === 'pause' ? pause() : menu();
 }
 
 async function gameOverPanel() {
   if (state !== 'over') return;
   const rekord = lastRekord, k = kills, w = wave;
+  const board = usedAdmin ? 'admin' : difficulty; // runder med admin kommer på Admin-tavlen
   const again = () => { if (TOUCH) goFullscreen(); start(adminMode); };
   const head = `<h1>Du blev nedlagt</h1>
       <div class="stats">
         <div class="stat"><div class="n">${w}</div><div class="l">Bølge</div></div>
         <div class="stat"><div class="n">${k}</div><div class="l">Nedlagt</div></div>
         <div class="stat"><div class="n">${best}</div><div class="l">Din rekord</div></div>
-      </div>${rekord && k > 0 ? '<p><b>Ny rekord!</b></p>' : ''}`;
+      </div><p class="muted">Sværhedsgrad: <b style="color:${D.color}">${D.name}</b></p>${rekord && k > 0 ? '<p><b>Ny rekord!</b></p>' : ''}`;
   const btns = adminMode
     ? `<div class="menu-btns"><button id="gonormal">▶ Spil normalt</button><button class="sec" id="go">Spil igen (admin)</button><button class="sec" id="hsmenu">Menu</button></div>`
     : `<div class="menu-btns"><button id="go">Spil igen</button><button class="sec" id="goadmin">⚙ Admin-tilstand</button><button class="sec" id="hsmenu">Menu</button></div>`;
@@ -2159,17 +2242,17 @@ async function gameOverPanel() {
     const gn = document.getElementById('gonormal'); if (gn) gn.onclick = () => { if (TOUCH) goFullscreen(); start(false); };
   };
   panel.innerHTML = head + '<p class="muted">Henter highscore…</p>'; overlay.classList.remove('hidden');
-  const list = await Promise.race([hsLoad(), new Promise(r => setTimeout(() => r(null), 5000))]);
+  const list = await Promise.race([hsLoad(board), new Promise(r => setTimeout(() => r(null), 5000))]);
   if (state !== 'over') return;
   let mid;
-  if (usedAdmin) mid = `<p class="muted">${adminMode ? 'Du spillede i admin-tilstand' : 'Du har brugt admin-panelet i denne runde'}, så den kommer ikke på highscore-tavlen.</p>` + hsTable(list);
-  else if (hsQualifies(list, k, w)) {
+  const adminNote = usedAdmin ? `<p class="muted">${adminMode ? 'Du spillede i admin-tilstand' : 'Du har brugt admin-panelet'} – runden hører til på <b style="color:#ffd84a">Admin-tavlen</b>.</p>` : '';
+  if (hsQualifies(list, k, w)) {
     let saved = ''; try { saved = localStorage.getItem('robotjagt_name') || ''; } catch (e) {}
     mid = `<p><b>Du kom på top 10!</b> Skriv dit navn:</p>
       <form class="hs-form" id="hsf"><input id="hsname" maxlength="16" autocomplete="off" placeholder="Dit navn" value="${esc(saved)}"><button type="submit">Gem</button></form>
-      <div class="err" id="hserr"></div>${hsTable(list)}`;
-  } else mid = `<p class="muted">${hsWhere()} – ${k < 1 ? 'du skal nedlægge mindst én robot for at komme på' : 'du skal slå nr. 10 for at komme på'}.</p>` + hsTable(list);
-  panel.innerHTML = head + mid + btns; wire();
+      <div class="err" id="hserr"></div>${hsTable(list, null, board)}`;
+  } else mid = `<p class="muted">${hsWhere()} – ${k < 1 ? 'du skal nedlægge mindst én robot for at komme på' : 'du skal slå nr. 10 for at komme på'}.</p>` + hsTable(list, null, board);
+  panel.innerHTML = head + adminNote + mid + btns; wire();
   const f = document.getElementById('hsf');
   if (f) {
     const inp = document.getElementById('hsname'); if (!TOUCH) setTimeout(() => inp.focus(), 50);
@@ -2180,8 +2263,8 @@ async function gameOverPanel() {
       try { localStorage.setItem('robotjagt_name', name); } catch (er) {}
       f.querySelector('button').disabled = true;
       try {
-        const top = await hsSubmit(name, k, w);
-        panel.innerHTML = head + `<p><b>Gemt!</b> <span class="muted">${hsWhere()}</span></p>` + hsTable(top, { name, kills: k, wave: w }) + btns; wire();
+        const top = await hsSubmit(name, k, w, board);
+        panel.innerHTML = head + `<p><b>Gemt!</b> <span class="muted">${hsWhere()}</span></p>` + hsTable(top, { name, kills: k, wave: w }, board) + btns; wire();
       } catch (er) {
         f.querySelector('button').disabled = false;
         document.getElementById('hserr').textContent = er.message || 'Kunne ikke gemme – prøv igen';
@@ -2322,7 +2405,7 @@ function adminControls() {
 }
 function adminAction(a) {
   const p = player;
-  const hm = 1 + CFG.hpPerWave * (Math.max(1, wave) - 1);
+  const hm = (1 + CFG.hpPerWave * (Math.max(1, wave) - 1)) * D.robotHp;
   if (a === 'god') { cheats.god = !cheats.god; return adminControls(); }
   if (a === 'ammo') { cheats.ammo = !cheats.ammo; return adminControls(); }
   if (a === 'aimbot') { cheats.aimbot = !cheats.aimbot; return adminControls(); }
