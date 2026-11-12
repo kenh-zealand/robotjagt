@@ -1338,7 +1338,7 @@ function hitPlayer(dmg, quiet) {
   player.hp -= dmg; player.lastHit = time;
   if (quiet) { player.flash = Math.max(player.flash, 0.07); shake = Math.max(shake, 2); }
   else { player.flash = 0.18; shake = Math.max(shake, 6); burst(player.x, player.y, '#ff6b6b', 8, 200); }
-  if (player.hp <= 0 && player.revives > 0) { // engle-skin: genopstår én gang med fuldt liv og 3 sek. beskyttelse
+  if (player.hp <= 0 && player.revives > 0) { // engle-skin: genopstår op til 5 gange med fuldt liv og 3 sek. beskyttelse
     player.revives--; player.hp = player.maxHp; player.invuln = 3; player.flash = 0; shake = Math.max(shake, 10);
     burst(player.x, player.y, '#fff3b0', 40, 360); burst(player.x, player.y, '#ffffff', 25, 260); rings.push({ x: player.x, y: player.y, t: 0, small: true });
     popups.push({ x: player.x, y: player.y - 50, text: '😇 Genoplivet!', color: '#fff3b0', t: 0 }); return;
@@ -2302,7 +2302,7 @@ ${controls}
 }
 // admin = true: admin-tilstand – alle har admin uden kode, men runden tæller ikke på highscore
 let aprilMode = false; // 🤡 aprilsnar: alt skyder granater – runden tæller ikke på highscore
-function start(admin) { D = DIFFS[difficulty]; reset(); if (!D.autoReload) player.ammo = CFG.hardStartAmmo; if (!D.autoMats) materials = CFG.startMaterials; player.skin = pendingSkin; if (player.skin === 'flame') player.dmgMul += 0.1; if (player.skin === 'angel') { player.dmgMul += 2; player.speedMul = 2; player.reloadMul = 2; player.revives = 1; } pendingSkin = null; adminFree = false; secretBuf = ''; for (const k in cheats) cheats[k] = false; adminMode = !!admin; usedAdmin = adminMode; state = 'play'; overlay.classList.add('hidden'); last = performance.now(); if (aprilMode) popups.push({ x: player.x, y: player.y - 70, text: '🤡 APRILSNAR – alt skyder granater!', color: '#ff9de2', t: -1 }); }
+function start(admin) { D = DIFFS[difficulty]; reset(); if (!D.autoReload) player.ammo = CFG.hardStartAmmo; if (!D.autoMats) materials = CFG.startMaterials; player.skin = pendingSkin; if (player.skin === 'flame') player.dmgMul += 0.1; if (player.skin === 'angel') { player.dmgMul += 2; player.speedMul = 2; player.reloadMul = 2; player.revives = 5; } pendingSkin = null; adminFree = false; secretBuf = ''; for (const k in cheats) cheats[k] = false; adminMode = !!admin; usedAdmin = adminMode; state = 'play'; overlay.classList.add('hidden'); last = performance.now(); if (aprilMode) popups.push({ x: player.x, y: player.y - 70, text: '🤡 APRILSNAR – alt skyder granater!', color: '#ff9de2', t: -1 }); }
 function pause() {
   state = 'pause'; mouse.down = false; keys.clear();
   showPanel(`<h1>Pause</h1><p>Bølge ${wave} · ${kills} robotter nedlagt</p>`, 'Fortsæt', resume);
