@@ -149,6 +149,8 @@ const CFG = {
   playerMaxHp: 3000,
   reviveTime: 3,         // multiplayer: sekunder ved en holdkammerat for at genoplive
   reviveDist: 70,
+  iceSlowTime: 10,       // is-skin: sekunder robotter er nedfrosset
+  iceSlow: 0.9,          // is-skin: robotterne bevæger sig med 90 % fart
   ffMul: 0.25,           // multiplayer: friendly fire gør en fjerdedel af skaden
   playerSpeed: 240,
   regenDelay: 5,        // sekunder uden skade før regenerering
@@ -942,6 +944,9 @@ function hitRobot(r, b) {
     superCharge = Math.min(CFG.superHits, superCharge + (b.superGain || 1));
     if (superCharge >= CFG.superHits) { banner('SUPER KLAR!'); burst(player.x, player.y, '#ffd84a', 20, 200); }
   }
+  if (player.skin === 'ice') { // is-skin: robotten bliver 10 % langsommere i 10 sekunder
+    r.slowT = CFG.iceSlowTime; if (MP && MP.role === 'client' && r.id) MP.slow.add(r.id);
+  }
   damageRobot(r, b.dmg, b.x, b.y);
 }
 function damageRobot(r, dmg, x, y, quiet) {
@@ -1411,6 +1416,10 @@ function updatePlayer(dt) {
     particles.push({ x: p.x - mx * 14 + rand(-6, 6), y: p.y - my * 14 + rand(-6, 6), vx: rand(-20, 20), vy: rand(-20, 20), life, max: life,
       color: `hsl(${(time * 160 + rand(0, 120)) % 360},100%,65%)`, size: rand(2.5, 4.5), drag: 0.9 });
   }
+  if (p.skin === 'ice' && Math.random() < ((mx || my) ? 0.5 : 0.15)) { // is-skin: snefnug
+    const life = rand(0.6, 1.1);
+    particles.push({ x: p.x + rand(-16, 16), y: p.y + rand(-16, 16), vx: rand(-20, 20), vy: rand(-20, 20), life, max: life, color: ['#ffffff', '#bff3ff', '#8fdcff'][Math.floor(Math.random() * 3)], size: rand(1.5, 3), drag: 0.97 });
+  }
   if (p.skin === 'flame' && Math.random() < ((mx || my) ? 0.8 : 0.35)) { // flamme-skin: gløder og gnister der stiger op
     const life = rand(0.4, 0.8);
     particles.push({ x: p.x - mx * 12 + rand(-10, 10), y: p.y - my * 12 + rand(-10, 6), vx: rand(-25, 25), vy: rand(-110, -50), life, max: life,
@@ -1475,6 +1484,14 @@ function updateBurning(dt) {
   }
 }
 function robotStep(r, dt) {
+  if (r.slowT > 0) { // nedfrosset af is-skinnet: al bevægelse er 10 % langsommere
+    r.slowT -= dt; const x0 = r.x, y0 = r.y;
+    try { robotMove(r, dt); } finally { r.x = x0 + (r.x - x0) * CFG.iceSlow; r.y = y0 + (r.y - y0) * CFG.iceSlow; }
+    return;
+  }
+  robotMove(r, dt);
+}
+function robotMove(r, dt) {
     r.flash = Math.max(0, r.flash - dt); r.alertT = Math.max(0, r.alertT - dt);
     if (r.type === 'tele') {
       if (r.teleT > 0) { r.teleT -= dt; if (r.teleT <= 0) teleport(r); return; } // står stille og lader op
@@ -1780,6 +1797,14 @@ function draw() {
     ctx.font = '900 ' + (P.icon.length > 1 ? 15 : 22) + 'px system-ui,sans-serif'; ctx.fillText(P.icon, pu.x, pu.y + bob + 1);
   }
   for (const r of robots) drawRobot(r);
+  for (const r of robots) if (r.slowT > 0) { // frost på nedfrosne robotter
+    ctx.save(); ctx.translate(r.x, r.y); ctx.globalAlpha = Math.min(1, r.slowT) * 0.85;
+    ctx.strokeStyle = '#bff3ff'; ctx.lineWidth = 2; ctx.shadowColor = '#7fdcff'; ctx.shadowBlur = 8;
+    circle(0, 0, r.r + 5); ctx.stroke();
+    ctx.rotate(time * 0.6);
+    for (let k = 0; k < 6; k++) { ctx.rotate(Math.PI / 3); ctx.beginPath(); ctx.moveTo(0, -r.r - 1); ctx.lineTo(0, -r.r - 10); ctx.moveTo(-3, -r.r - 6); ctx.lineTo(0, -r.r - 9); ctx.lineTo(3, -r.r - 6); ctx.stroke(); }
+    ctx.restore();
+  }
   mpDrawOthers();
   if (state !== 'over') drawPlayer();
 
@@ -1986,6 +2011,15 @@ function drawPlayer() {
   ctx.save(); ctx.translate(p.x, p.y);
   ctx.globalAlpha = p.hidden ? (p.reveal > 0 ? 0.9 : 0.6) : 1;
   ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(3, 7, p.r, p.r * 0.7, 0, 0, Math.PI * 2); ctx.fill();
+  if (p.skin === 'ice') { // is: krystaller der drejer langsomt og en kold glød
+    ctx.save(); ctx.rotate(-p.angle + time * 0.5); ctx.shadowColor = '#7fdcff'; ctx.shadowBlur = 12;
+    for (let k = 0; k < 6; k++) {
+      ctx.rotate(Math.PI / 3); const len = p.r + 9 + 3 * Math.sin(time * 3 + k);
+      ctx.beginPath(); ctx.moveTo(-4, -p.r + 4); ctx.lineTo(0, -len); ctx.lineTo(4, -p.r + 4); ctx.closePath();
+      ctx.fillStyle = k % 2 ? 'rgba(220,250,255,.85)' : 'rgba(140,220,255,.8)'; ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 1; ctx.stroke();
+    }
+    ctx.restore();
+  }
   if (p.skin === 'owner') { // ejer: roterende guldstråler og kongelig lilla glød
     ctx.save(); ctx.rotate(-p.angle + time * 0.8); ctx.globalCompositeOperation = 'lighter';
     for (let k = 0; k < 12; k++) {
@@ -2055,6 +2089,11 @@ function drawPlayer() {
     const sx = Math.cos(sa) * p.r * 0.55, sy = Math.sin(sa) * p.r * 0.55;
     ctx.beginPath(); ctx.moveTo(sx, sy - 6); ctx.lineTo(sx + 2, sy - 2); ctx.lineTo(sx + 6, sy); ctx.lineTo(sx + 2, sy + 2); ctx.lineTo(sx, sy + 6); ctx.lineTo(sx - 2, sy + 2); ctx.lineTo(sx - 6, sy); ctx.lineTo(sx - 2, sy - 2); ctx.closePath(); ctx.fill();
     ctx.globalAlpha = 1;
+  } else if (p.skin === 'ice' && p.flash <= 0) { // is: isblå krop med hvid frostkant og sprækker
+    const g = ctx.createRadialGradient(-5, -5, 1, 0, 0, p.r);
+    g.addColorStop(0, '#ffffff'); g.addColorStop(0.45, '#bff3ff'); g.addColorStop(1, '#3aa6e0');
+    circle(0, 0, p.r); ctx.fillStyle = g; ctx.fill(); ctx.lineWidth = 2.5; ctx.strokeStyle = '#e8fbff'; ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(-8, 6); ctx.lineTo(-2, 0); ctx.lineTo(-5, -7); ctx.moveTo(-2, 0); ctx.lineTo(6, 3); ctx.stroke();
   } else if (p.skin === 'owner' && p.flash <= 0) { // ejer: dyb lilla krop med guldkant
     const g = ctx.createRadialGradient(-4, -4, 1, 0, 0, p.r);
     g.addColorStop(0, '#d9a8ff'); g.addColorStop(0.5, '#7a2fd0'); g.addColorStop(1, '#3a0f6e');
@@ -2316,7 +2355,7 @@ function menu() {
   panel.innerHTML = `<h1>Robotjagt</h1><p>Overlev så mange bølger af robotter som muligt. <span style="color:#93a0b0">· v${VERSION}</span></p>
     <div class="diff">${Object.entries(DIFFS).map(([k, d]) => `<button data-d="${k}" class="${k === difficulty ? 'on' : ''}" style="${k === difficulty ? 'border-color:' + d.color : ''}">${d.name}</button>`).join('')}</div>
     <div class="diff-info">${{ easy: 'Dobbelt liv, dobbelt så hurtig genladning, robotterne er halvt så stærke. Miniboss hver 5. bølge, boss hver 20., ingen ultra-boss. Mellemrum sigter automatisk.', normal: 'Det almindelige spil.', hard: 'Du er halvt så stærk, robotterne dobbelt så stærke. Ingen genladning – find skud og træ på banen. Du kan ikke gå gennem dine egne vægge.' }[difficulty]}</div>
-    <div class="menu-btns"><button id="go">Start spil</button><button class="sec" id="mpnow">👥 Multiplayer</button><button class="sec" id="admstart">⚙ Admin-tilstand</button><button class="sec" id="aprilstart">🤡 Aprilsnar</button><button class="sec" id="hsnow">🏆 Highscore</button><button class="sec" id="lockernow">🎽 Locker</button><button class="sec" id="codesnow">🔑 Koder</button><button class="sec" id="lognow">Ændringslog</button></div>${pendingSkin ? (pendingSkin === 'diamond' ? '<p class="tip" style="color:#9fefff">💎 Diamant-skin er klar til næste runde</p>' : pendingSkin === 'rainbow' ? '<p class="tip" style="color:#8fd0ff">🌈 Regnbue-skin er klar til næste runde</p>' : pendingSkin === 'flame' ? '<p class="tip" style="color:#ff8a3a">🔥 Flamme-skin er klar til næste runde</p>' : pendingSkin === 'angel' ? '<p class="tip" style="color:#fff3b0">😇 Engle-skin er klar til næste runde</p>' : pendingSkin === 'owner' ? '<p class="tip" style="color:#ffd84a">👑 Ejer-skin er klar til næste runde</p>' : '<p class="tip" style="color:#ffd84a">✨ Guld-skin er klar til næste runde</p>') : ''}
+    <div class="menu-btns"><button id="go">Start spil</button><button class="sec" id="mpnow">👥 Multiplayer</button><button class="sec" id="admstart">⚙ Admin-tilstand</button><button class="sec" id="aprilstart">🤡 Aprilsnar</button><button class="sec" id="hsnow">🏆 Highscore</button><button class="sec" id="lockernow">🎽 Locker</button><button class="sec" id="codesnow">🔑 Koder</button><button class="sec" id="lognow">Ændringslog</button></div>${pendingSkin ? (pendingSkin === 'diamond' ? '<p class="tip" style="color:#9fefff">💎 Diamant-skin er klar til næste runde</p>' : pendingSkin === 'rainbow' ? '<p class="tip" style="color:#8fd0ff">🌈 Regnbue-skin er klar til næste runde</p>' : pendingSkin === 'flame' ? '<p class="tip" style="color:#ff8a3a">🔥 Flamme-skin er klar til næste runde</p>' : pendingSkin === 'angel' ? '<p class="tip" style="color:#fff3b0">😇 Engle-skin er klar til næste runde</p>' : pendingSkin === 'owner' ? '<p class="tip" style="color:#ffd84a">👑 Ejer-skin er klar til næste runde</p>' : pendingSkin === 'ice' ? '<p class="tip" style="color:#9fe8ff">❄ Is-skin er klar til næste runde</p>' : '<p class="tip" style="color:#ffd84a">✨ Guld-skin er klar til næste runde</p>') : ''}
     ${portrait ? '<p class="tip">📱 Spillet er bedst, når du vender telefonen på langs.</p>' : ''}
     ${TOUCH && !canFullscreen() ? '<p class="tip">Tip: Del → "Føj til hjemmeskærm" giver fuld skærm.</p>' : ''}
     <details ${TOUCH ? '' : 'open'}><summary>Sådan spiller du</summary>
@@ -2536,7 +2575,7 @@ let pendingSkin = null; // gælder kun for næste runde
 const skinCodesUsed = new Set(); // ejer-skin: alle skin-koder skal tastes (i vilkårlig rækkefølge)
 // 🎽 Locker (åben for alle): viser alle skins, man har aktiveret,
 // og det skin, man tager på, bliver på i alle runder, indtil man tager et andet (gemmes på enheden).
-const SKINS = { gold: ['✨ Guld', '#ffd84a'], rainbow: ['🌈 Regnbue', '#8fd0ff'], diamond: ['💎 Diamant', '#9fefff'], flame: ['🔥 Flamme', '#ff8a3a'], angel: ['😇 Engel', '#fff3b0'], owner: ['👑 Ejer', '#ffd84a'] };
+const SKINS = { gold: ['✨ Guld', '#ffd84a'], rainbow: ['🌈 Regnbue', '#8fd0ff'], diamond: ['💎 Diamant', '#9fefff'], flame: ['🔥 Flamme', '#ff8a3a'], angel: ['😇 Engel', '#fff3b0'], ice: ['❄ Is', '#9fe8ff'], owner: ['👑 Ejer', '#ffd84a'] };
 function lsGet(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } }
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
 function usedSkins() { try { const a = JSON.parse(lsGet('robotjagt_skins', '[]')); return Array.isArray(a) ? a.filter(k => SKINS[k]) : []; } catch (e) { return []; } }
@@ -2553,7 +2592,7 @@ function openLocker() {
   panel.querySelectorAll('[data-skin]').forEach(b => b.onclick = () => { lsSet('robotjagt_equip', b.dataset.skin); pendingSkin = null; openLocker(); });
   document.getElementById('lockerback').onclick = menu;
 }
-const CODES = { 193423269: 'gold', 1715379802: 'rainbow', 916669625: 'diamond', 177609: 'flame', 1815438879: 'angel' }; // koderne gemmes kun som tal, så de ikke kan læses i koden
+const CODES = { 193423269: 'gold', 1715379802: 'rainbow', 916669625: 'diamond', 177609: 'flame', 1815438879: 'angel', 1721998069: 'ice' }; // koderne gemmes kun som tal, så de ikke kan læses i koden
 function codeHash(t) { let h = 5381; for (const c of t.trim().toLowerCase()) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0; return h; }
 function openCodes() {
   panel.innerHTML = `<h1>🔑 Koder</h1><p>Har du en kode? Skriv den her.</p>
@@ -2567,11 +2606,12 @@ function openCodes() {
     const msg = document.getElementById('codemsg'), what = CODES[codeHash(inp.value)];
     if (what === 'gold') { pendingSkin = 'gold'; msg.style.color = '#ffd84a'; msg.textContent = '✨ Guld-skin aktiveret til næste runde!'; }
     else if (what === 'diamond') { pendingSkin = 'diamond'; msg.style.color = '#9fefff'; msg.textContent = '💎 Diamant-skin aktiveret til næste runde!'; }
+    else if (what === 'ice') { pendingSkin = 'ice'; msg.style.color = '#9fe8ff'; msg.textContent = '❄ Is-skin aktiveret til næste runde!'; }
     else if (what === 'angel') { pendingSkin = 'angel'; msg.style.color = '#fff3b0'; msg.textContent = '😇 Engle-skin aktiveret til næste runde!'; }
     else if (what === 'flame') { pendingSkin = 'flame'; msg.style.color = '#ff8a3a'; msg.textContent = '🔥 Flamme-skin aktiveret til næste runde!'; }
     else if (what === 'rainbow') { pendingSkin = 'rainbow'; msg.style.color = '#8fd0ff'; msg.textContent = '🌈 Regnbue-skin aktiveret til næste runde!'; }
     else { msg.style.color = ''; msg.textContent = 'Ukendt kode'; }
-    if (what) { markSkin(what); skinCodesUsed.add(what); if (skinCodesUsed.size >= 5) { skinCodesUsed.clear(); pendingSkin = 'owner'; msg.style.color = '#ffd84a'; msg.textContent = '👑 Ejer-skin aktiveret til næste runde!'; } }
+    if (what) { markSkin(what); skinCodesUsed.add(what); if (skinCodesUsed.size >= 6) { skinCodesUsed.clear(); pendingSkin = 'owner'; msg.style.color = '#ffd84a'; msg.textContent = '👑 Ejer-skin aktiveret til næste runde!'; } }
     if (pendingSkin) markSkin(pendingSkin);
     inp.value = ''; inp.focus();
   };
@@ -2849,7 +2889,7 @@ function mpStartGame(slot) {
   if (TOUCH) goFullscreen();
   start(false);
   player.x += slot * 60; player.y += slot * 30;
-  others = []; MP.revT = {}; MP.took = new Set(); MP.reqPU = new Set(); MP.dq = new Map(); MP.burn = {}; MP.shots = []; MP.snapT = 0; MP.stT = 0; MP.over = false; mpFx = [];
+  others = []; MP.revT = {}; MP.took = new Set(); MP.reqPU = new Set(); MP.dq = new Map(); MP.burn = {}; MP.shots = []; MP.slow = new Set(); MP.snapT = 0; MP.stT = 0; MP.over = false; mpFx = [];
   if (MP.role === 'host') { MP.players = new Map(); }
   popups.push({ x: player.x, y: player.y - 90, text: '👥 Multiplayer – ' + Object.values(MP.names).join(', '), color: '#8fd0ff', t: -1.2 });
 }
@@ -2873,7 +2913,7 @@ async function mpJoin(name, code) {
   peer.on('error', er => { if (!MP || !MP.id) fail(er.type === 'peer-unavailable' ? 'Fandt intet spil med koden ' + code : 'Kunne ikke forbinde (' + (er.type || er) + ')'); });
   peer.on('open', () => {
     const conn = peer.connect(MP_PREFIX + code, { reliable: true });
-    MP = { role: 'client', peer, conn, code, id: null, names: {}, ff: false, mode: 'normal', took: new Set(), revT: {}, reqPU: new Set(), dq: new Map(), burn: {}, shots: [] };
+    MP = { role: 'client', peer, conn, code, id: null, names: {}, ff: false, mode: 'normal', took: new Set(), revT: {}, reqPU: new Set(), dq: new Map(), burn: {}, shots: [], slow: new Set() };
     setTimeout(() => { if (MP && MP.conn === conn && !MP.id) fail('Fandt intet spil med koden ' + code); }, 12000);
     conn.on('open', () => mpSend({ t: 'hello', name, v: VERSION }, conn));
     conn.on('data', d => { try { mpClientMsg(d); } catch (e) { reportError(e); } });
@@ -2917,6 +2957,7 @@ function mpHostMsg(id, d) {
     const ox = p.x, oy = p.y, first = p.tx === undefined; Object.assign(p, d.s); p.tx = d.s.x; p.ty = d.s.y; if (!first) { p.x = ox; p.y = oy; }
     for (const [rid, dmg, q] of d.dr || []) { const r = robots.find(o => o.id === rid); if (r) damageRobot(r, dmg, r.x, r.y, !!q); }
     for (const k in d.burn || {}) { const r = robots.find(o => o.id === +k); if (r) { r.burnT = CFG.burnTime; r.burnDps = d.burn[k]; } }
+    for (const rid of d.sl || []) { const r = robots.find(o => o.id === rid); if (r) r.slowT = CFG.iceSlowTime; }
     for (const s of d.sh || []) bullets.push({ x: s[0], y: s[1], vx: s[2], vy: s[3], life: s[4], owner: 'v', team: true, strong: !!s[5], april: !!s[6], from: id });
     return;
   }
@@ -3069,6 +3110,7 @@ function mpClientUpdate(dt) {
     if (MP.dq.size) { msg.dr = [...MP.dq].map(([id, v]) => [id, Math.round(v[0] * 10) / 10, v[1]]); MP.dq.clear(); }
     if (Object.keys(MP.burn).length) { msg.burn = MP.burn; MP.burn = {}; }
     if (MP.shots.length) { msg.sh = MP.shots; MP.shots = []; }
+    if (MP.slow.size) { msg.sl = [...MP.slow]; MP.slow.clear(); }
     mpSend(msg);
   }
 }
