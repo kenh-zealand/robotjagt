@@ -65,6 +65,7 @@
   .admin-grid button{margin:0;padding:10px 8px;font-size:14px;width:100%}
   .admin-grid button.on{background:#e0b23c;color:#231a00}
   .admin-row{display:flex;gap:8px;align-items:center;justify-content:center;margin:10px 0}
+  .mpcode{font:900 44px/1.1 system-ui,sans-serif;letter-spacing:8px;color:#ffd84a;margin:4px 0 6px;user-select:all}
   .panel input{background:#11161c;color:#eef2f7;border:1px solid #3a4756;border-radius:10px;padding:11px 12px;font-size:16px;font-family:inherit;width:100%;box-sizing:border-box}
   .admin-row input{width:90px}
   .err{color:#ff7b6b;min-height:20px;font-size:14px}
@@ -82,6 +83,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.58', d: '13-11-2026', items: ['👥 Multiplayer: spil sammen på hold med op til 3 spillere – den ene laver en kode, de andre skriver den', 'Friendly fire kan slås til og fra i lobbyen (gør en fjerdedel skade)', 'Er man nede, kan en holdkammerat genoplive en ved at stå ved en i 3 sekunder – spillet slutter, når hele holdet er nede', 'Våben, granater og kasser forsvinder kun for den, der tager dem – buffs får hele holdet', 'Egne multiplayer-highscore-tavler for Let, Normal, Svær og Aprilsnar'] },
   { v: '1.57', d: '13-11-2026', items: ['Flammerne fra minibossen, bossen og ultra-bossen er dobbelt så store, så de passer til, hvor langt de rækker'] },
   { v: '1.56', d: '12-11-2026', items: ['🤡 Ny spiltilstand: Aprilsnar – alle dine skud er granater, lige så stærke som rigtige granater. Den har sin egen highscore-tavle'] },
   { v: '1.55', d: '12-11-2026', items: ['Miniboss, boss og ultra-boss smadrer med det samme alle dine vægge inden for 3 spillerbredder', 'Flammerobotternes flammer er dobbelt så store, så de passer til, hvor langt de rækker'] },
@@ -145,6 +147,9 @@ const VERSION = CHANGELOG[0].v;
 // ---------- Indstillinger ----------
 const CFG = {
   playerMaxHp: 3000,
+  reviveTime: 3,         // multiplayer: sekunder ved en holdkammerat for at genoplive
+  reviveDist: 70,
+  ffMul: 0.25,           // multiplayer: friendly fire gør en fjerdedel af skaden
   playerSpeed: 240,
   regenDelay: 5,        // sekunder uden skade før regenerering
   regenRate: 0.20,      // 20 % af max liv pr. sekund
@@ -265,7 +270,8 @@ const DIFFS = {
   hard:   { name: 'Svær',   color: '#ff6b5b', playerHp: 0.5, playerDmg: 0.5, reload: 1, robotHp: 2,   robotDmg: 2,   ultra: true,  miniEvery: 1, bossEvery: 5,  autoReload: false, autoMats: false, wallsSolid: true }
 };
 // Highscore-tavler: én pr. sværhedsgrad + én for runder med admin
-const BOARDS = { easy: DIFFS.easy, normal: DIFFS.normal, hard: DIFFS.hard, admin: { name: 'Admin', color: '#ffd84a' }, april: { name: '🤡 Aprilsnar', color: '#ff9de2' } };
+const BOARDS = { easy: DIFFS.easy, normal: DIFFS.normal, hard: DIFFS.hard, admin: { name: 'Admin', color: '#ffd84a' }, april: { name: '🤡 Aprilsnar', color: '#ff9de2' },
+  mp_easy: { name: '👥 Let', color: '#6fe39a' }, mp_normal: { name: '👥 Normal', color: '#c9d3df' }, mp_hard: { name: '👥 Svær', color: '#ff6b5b' }, mp_april: { name: '👥 🤡 Aprilsnar', color: '#ff9de2' } };
 let difficulty = 'normal';
 try { const d = localStorage.getItem('robotjagt_diff'); if (DIFFS[d]) difficulty = d; } catch (e) {}
 let D = DIFFS[difficulty];
@@ -419,7 +425,7 @@ function checkEnclosed() {
 function computeFlow() {
   checkEnclosed();
   flow.fill(Infinity);
-  const start = cellOf(player.x, player.y), heap = [];
+  const heap = [];
   const push = (c, i) => { heap.push([c, i]); let k = heap.length - 1; while (k > 0) { const q = (k - 1) >> 1; if (heap[q][0] <= heap[k][0]) break; [heap[q], heap[k]] = [heap[k], heap[q]]; k = q; } };
   const pop = () => {
     const top = heap[0], last = heap.pop();
@@ -428,7 +434,8 @@ function computeFlow() {
       if (m === k) break; [heap[m], heap[k]] = [heap[k], heap[m]]; k = m; } }
     return top;
   };
-  flow[start] = 0; push(0, start);
+  const goals = mpAll().filter(t => !t.dead); if (!goals.length) goals.push(player);
+  for (const t of goals) { const st = cellOf(t.x, t.y); flow[st] = 0; push(0, st); }
   while (heap.length) {
     const [c, i] = pop(); if (c > flow[i]) continue;
     const cx = i % GW, cy = (i / GW) | 0;
@@ -549,6 +556,7 @@ function tryBuild(wx, wy, quiet) {
   }
   const w = { x: c.x, y: c.y, w: GS, h: GS, hp: CFG.wallHp, maxHp: CFG.wallHp, i: c.i, flash: 0 };
   builtWalls.push(w); builtAt[c.i] = w; materials--; flowDirty = true;
+  if (MP && MP.role === 'client') mpSend({ t: 'build', x: Math.round(wx), y: Math.round(wy) }); // værten bygger den for hele holdet
   burst(c.x + GS / 2, c.y + GS / 2, '#c9a06a', 10, 160);
   return true;
 }
@@ -687,7 +695,7 @@ function updateMeteors(dt) {
       const R = CFG.ultraMeteorRadius;
       shake = Math.max(shake, 8); rings.push({ x: m.x, y: m.y, t: 0.15, meteor: true });
       burst(m.x, m.y, '#ff7a2a', 22, 320); burst(m.x, m.y, '#5a4a40', 14, 220); burst(m.x, m.y, '#ffdf6b', 8, 160);
-      if (Math.hypot(player.x - m.x, player.y - m.y) < R + player.r) hitPlayer(CFG.ultraMeteorDamage);
+      for (const t of mpAll()) if (!t.dead && Math.hypot(t.x - m.x, t.y - m.y) < R + t.r) mpHit(t, CFG.ultraMeteorDamage);
       builtInBox(m.x - R, m.y - R, m.x + R, m.y + R, w => { if (circleHitsRect(m.x, m.y, R, w)) damageWall(w, w.maxHp * 0.6, true); return false; });
     }
   }
@@ -892,6 +900,7 @@ function tryShoot(angle) {
       hitRobot(r, { dmg, x: r.x, y: r.y, superGain: W.superGain });
       // efterbrand: robotten brænder videre (kun fra dit våben – robotternes flammer giver ikke efterbrand)
       r.burnT = CFG.burnTime; r.burnDps = CFG.burnDps * p.dmgMul * pDmg() * (buffs.damage > 0 ? 2 : 1);
+      if (MP && MP.role === 'client' && r.id) MP.burn[r.id] = Math.round(r.burnDps);
     }
     return;
   }
@@ -937,6 +946,10 @@ function hitRobot(r, b) {
 }
 function damageRobot(r, dmg, x, y, quiet) {
   if (!robots.includes(r)) return;
+  if (MP && MP.role === 'client') { // multiplayer: værten bestemmer robotternes liv – vi viser bare træffet
+    if (!r.id) return; const q = MP.dq.get(r.id); if (q) { q[0] += dmg; q[1] = q[1] && quiet ? 1 : 0; } else MP.dq.set(r.id, [dmg, quiet ? 1 : 0]);
+    r.hp -= dmg; if (!quiet) { r.flash = 0.12; burst(x, y, '#ffe1a0', 8, 220); } return;
+  }
   r.hp -= dmg;
   if (!quiet) { r.flash = 0.12; burst(x, y, '#ffe1a0', 8, 220); }
   if (r.state !== 'chase') { r.lastSeen = { x: player.x, y: player.y }; r.searchT = 6; } // de hører hvor skuddet kom fra
@@ -1083,7 +1096,8 @@ function updatePowerups(dt) {
   buffs.damage = Math.max(0, buffs.damage - dt); buffs.reload = Math.max(0, buffs.reload - dt);
   for (let i = powerups.length - 1; i >= 0; i--) {
     const pu = powerups[i]; pu.t += dt;
-    if (Math.hypot(pu.x - player.x, pu.y - player.y) < player.r + 20) {
+    if (MP && !player.dead && Math.hypot(pu.x - player.x, pu.y - player.y) < player.r + 20) { mpGiveBuff(i); continue; } // multiplayer: hele holdet får den
+    if (!MP && Math.hypot(pu.x - player.x, pu.y - player.y) < player.r + 20) {
       const P = POWER[pu.type];
       applyPowerup(pu.type, false);
       burst(pu.x, pu.y, P.color, 24, 260);
@@ -1165,16 +1179,17 @@ function updateSupplies(dt) {
   if (!D.autoMats && supplyWoodT <= 0) { if (supplies.filter(o => o.type === 'wood').length < 3) spawnSupply('wood'); supplyWoodT = rand(6, 9); }
   for (let i = supplies.length - 1; i >= 0; i--) {
     const o = supplies[i]; o.t += dt;
-    if (Math.hypot(o.x - player.x, o.y - player.y) < player.r + 20) {
+    if (!player.dead && !mpTaken(o) && Math.hypot(o.x - player.x, o.y - player.y) < player.r + 20) {
       if (o.type === 'ammo') { player.ammo += CFG.hardAmmoPickup; popups.push({ x: player.x, y: player.y - 40, text: `+${CFG.hardAmmoPickup} skud`, color: '#f0a33a', t: 0.3 }); }
       else { materials = Math.min(CFG.maxMaterials, materials + CFG.hardWoodPickup); popups.push({ x: player.x, y: player.y - 40, text: `+${CFG.hardWoodPickup} byggemateriale`, color: '#e6c08a', t: 0.3 }); }
       burst(o.x, o.y, o.type === 'ammo' ? '#f0a33a' : '#c9a06a', 14, 200);
-      supplies.splice(i, 1);
+      mpPickedUp(supplies, i);
     }
   }
 }
 function drawSupplies() {
   for (const o of supplies) {
+    if (mpTaken(o)) continue;
     const bob = Math.sin(o.t * 3) * 3;
     ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(o.x, o.y + 16, 16, 6, 0, 0, Math.PI * 2); ctx.fill();
     ctx.save(); ctx.translate(o.x, o.y + bob);
@@ -1207,8 +1222,8 @@ function updateGrenades(dt) {
   }
   for (let i = grenadeDrops.length - 1; i >= 0; i--) {
     const g = grenadeDrops[i]; g.t += dt;
-    if (Math.hypot(g.x - player.x, g.y - player.y) < player.r + 22) {
-      player.grenades += CFG.grenadesPerPickup; grenadeDrops.splice(i, 1);
+    if (!player.dead && !mpTaken(g) && Math.hypot(g.x - player.x, g.y - player.y) < player.r + 22) {
+      player.grenades += CFG.grenadesPerPickup; mpPickedUp(grenadeDrops, i);
       burst(g.x, g.y, '#9be36f', 20, 240);
       popups.push({ x: player.x, y: player.y - 40, text: `+${CFG.grenadesPerPickup} granater (${TOUCH ? 'GRANAT-knappen' : 'tast F'})`, color: '#9be36f', t: 0 });
     }
@@ -1231,6 +1246,7 @@ function throwGrenade() {
   grenadesFlying.push({ x0: p.x, y0: p.y, tx, ty, t: 0, dur: 0.45 + Math.min(d, maxD) / 900 });
 }
 function explodeGrenade(x, y) {
+  if (MP && MP.role === 'client') mpSend({ t: 'fx', k: 'g', x: Math.round(x), y: Math.round(y) });
   const R = CFG.grenadeRadius;
   shake = Math.max(shake, 20); rings.push({ x, y, t: 0, grenade: true });
   burst(x, y, '#ffdf6b', 60, 700); burst(x, y, '#ff7a2a', 60, 560); burst(x, y, '#9be36f', 20, 400); burst(x, y, '#5a5f66', 40, 420);
@@ -1245,6 +1261,7 @@ function drawGrenadeIcon(x, y, s) {
 }
 function drawGrenades() {
   for (const g of grenadeDrops) {
+    if (mpTaken(g)) continue;
     const bob = Math.sin(g.t * 3) * 4, pulse = 0.5 + 0.5 * Math.sin(g.t * 5);
     ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(g.x, g.y + 20, 20, 7, 0, 0, Math.PI * 2); ctx.fill();
     ctx.globalAlpha = 0.25 + 0.25 * pulse; circle(g.x, g.y + bob, 32); ctx.fillStyle = '#9be36f'; ctx.fill(); ctx.globalAlpha = 1;
@@ -1266,10 +1283,10 @@ function updateWeaponDrops(dt) {
   if (weaponTimer <= 0) { if (!weaponDrops.length) spawnWeaponDrop(); weaponTimer = rand(CFG.weaponEvery[0], CFG.weaponEvery[1]); }
   for (let i = weaponDrops.length - 1; i >= 0; i--) {
     const w = weaponDrops[i]; w.t += dt;
-    if (Math.hypot(w.x - player.x, w.y - player.y) < player.r + 24) {
+    if (!player.dead && !mpTaken(w) && Math.hypot(w.x - player.x, w.y - player.y) < player.r + 24) {
       giveWeapon(w.type);
       burst(w.x, w.y, WEAPONS[w.type].color, 30, 300); banner(WEAPONS[w.type].name + '!');
-      weaponDrops.splice(i, 1);
+      mpPickedUp(weaponDrops, i);
     }
   }
 }
@@ -1325,6 +1342,7 @@ function updateMissiles(dt) {
   }
 }
 function explode(x, y) {
+  if (MP && MP.role === 'client') mpSend({ t: 'fx', k: 'm', x: Math.round(x), y: Math.round(y) });
   shake = Math.max(shake, 16);
   rings.push({ x, y, t: 0 });
   burst(x, y, '#ffdf6b', 40, 520); burst(x, y, '#ff7a2a', 40, 420); burst(x, y, '#5a5f66', 30, 300);
@@ -1334,7 +1352,8 @@ function explode(x, y) {
 }
 
 function hitPlayer(dmg, quiet) {
-  if (state !== 'play' || cheats.god || player.invuln > 0) return;
+  if (player.remote) { if (!player.dead && state === 'play') { player.pend += dmg; if (!quiet) player.hard = true; } return; } // multiplayer: skaden sendes til holdkammeraten
+  if (state !== 'play' || cheats.god || player.invuln > 0 || player.dead) return;
   dmg *= (1 + CFG.dmgPerWave * (wave - 1)) * D.robotDmg;
   player.hp -= dmg; player.lastHit = time;
   if (quiet) { player.flash = Math.max(player.flash, 0.07); shake = Math.max(shake, 2); }
@@ -1344,9 +1363,11 @@ function hitPlayer(dmg, quiet) {
     burst(player.x, player.y, '#fff3b0', 40, 360); burst(player.x, player.y, '#ffffff', 25, 260); rings.push({ x: player.x, y: player.y, t: 0, small: true });
     popups.push({ x: player.x, y: player.y - 50, text: '😇 Genoplivet!', color: '#fff3b0', t: 0 }); return;
   }
+  if (player.hp <= 0 && MP) { mpDown(); return; } // multiplayer: man er nede og kan genoplives
   if (player.hp <= 0) { player.hp = 0; burst(player.x, player.y, '#3d8bff', 30, 300); gameOver(); }
 }
 function burst(x, y, color, n, speed, dir, spread) {
+  if (MP && MP.role === 'host' && n >= 8 && mpFx.length < 60) mpFx.push([Math.round(x), Math.round(y), color, n, speed, dir ?? null, spread ?? null, mpFxFrom]);
   for (let i = 0; i < n; i++) {
     const a = dir === undefined ? rand(0, Math.PI * 2) : dir + rand(-spread, spread), v = rand(speed * 0.3, speed);
     const life = rand(0.25, 0.6);
@@ -1356,8 +1377,9 @@ function burst(x, y, color, n, speed, dir, spread) {
 
 // ---------- Opdatering ----------
 function update(dt) {
+  if (MP && MP.role === 'client') { mpClientUpdate(dt); return; } // klient: verden kommer fra værten
   time += dt;
-  if (robots.length === 0) { waveTimer -= dt; if (waveTimer <= 0) { spawnWave(); waveTimer = 2.5; } }
+  if (robots.length === 0 && !(MP && MP.over)) { waveTimer -= dt; if (waveTimer <= 0) { spawnWave(); waveTimer = 2.5; } }
   matTimer += dt;
   if (!D.autoMats) matTimer = 0; // Svær: byggematerialer findes kun på banen
   while (matTimer >= CFG.materialEvery) { matTimer -= CFG.materialEvery; if (materials < CFG.maxMaterials) materials++; }
@@ -1366,10 +1388,12 @@ function update(dt) {
   if (robots.length && (flowDirty || flowTimer <= 0)) { computeFlow(); flowDirty = false; flowTimer = 0.25; }
   updatePlayer(dt); updatePowerups(dt); updateWeaponDrops(dt); updateGrenades(dt); updateSupplies(dt); updateRobots(dt); updateBullets(dt); updateMissiles(dt); updateMeteors(dt);
   if (bannerT > 0) bannerT -= dt;
+  if (MP && MP.role === 'host') mpHostTick(dt);
 }
 
 function updatePlayer(dt) {
   const p = player;
+  if (p.dead) { p.flash = 0; return; } // multiplayer: nede
   if (!adminFree && Object.values(cheats).some(Boolean)) usedAdmin = true; // sikkerhedsnet: snyd slået til = admin-runde
   let mx = 0, my = 0;
   if (keys.has('KeyA') || keys.has('ArrowLeft')) mx--;
@@ -1450,14 +1474,12 @@ function updateBurning(dt) {
     damageRobot(r, r.burnDps * dt, r.x, r.y, true);
   }
 }
-function updateRobots(dt) {
-  updateBurning(dt);
-  for (const r of robots) {
+function robotStep(r, dt) {
     r.flash = Math.max(0, r.flash - dt); r.alertT = Math.max(0, r.alertT - dt);
     if (r.type === 'tele') {
-      if (r.teleT > 0) { r.teleT -= dt; if (r.teleT <= 0) teleport(r); continue; } // står stille og lader op
+      if (r.teleT > 0) { r.teleT -= dt; if (r.teleT <= 0) teleport(r); return; } // står stille og lader op
       r.teleCd = (r.teleCd ?? rand(2, 3.5)) - dt;
-      if (r.teleCd <= 0 && (r.state !== 'wander' || Math.random() < 0.4)) { r.teleT = 0.45; r.teleCd = rand(2.5, 4); continue; }
+      if (r.teleCd <= 0 && (r.state !== 'wander' || Math.random() < 0.4)) { r.teleT = 0.45; r.teleCd = rand(2.5, 4); return; }
     }
     const d = dist(r, player);
     // Bosser smadrer dine vægge, så snart de kommer tæt på
@@ -1468,7 +1490,7 @@ function updateRobots(dt) {
         return false;
       });
     }
-    if (r.type === 'ultra') { updateUltra(r, dt, d); continue; }
+    if (r.type === 'ultra') { updateUltra(r, dt, d); return; }
     const visible = !player.hidden || player.reveal > 0 || d < CFG.closeSight;
     const sees = d < CFG.robotView && visible && losRobot(r, player);
 
@@ -1587,7 +1609,7 @@ function updateRobots(dt) {
         r.state = 'search'; r.searchT -= dt;
         if (r.wallTarget) r.searchT = Math.max(r.searchT, 2);
         const dx = r.lastSeen.x - r.x, dy = r.lastSeen.y - r.y;
-        if (Math.hypot(dx, dy) < 25 || r.searchT <= 0) { if (r.type === 'boss') { r.lastSeen = { x: player.x, y: player.y }; r.searchT = 30; continue; } r.lastSeen = null; r.state = 'wander'; r.target = null; r.lookT = 1.6; }
+        if (Math.hypot(dx, dy) < 25 || r.searchT <= 0) { if (r.type === 'boss') { r.lastSeen = { x: player.x, y: player.y }; r.searchT = 30; return; } r.lastSeen = null; r.state = 'wander'; r.target = null; r.lookT = 1.6; }
         else {
           navigate(r, r.lastSeen.x, r.lastSeen.y, (r.type === 'saw' ? CFG.sawSpeed * 0.8 : CFG.robotSpeed * 1.05) * r.speedMul * dt);
           if (r.wallTarget) attackWall(r, dt);
@@ -1607,6 +1629,14 @@ function updateRobots(dt) {
         }
       }
     }
+
+}
+function updateRobots(dt) {
+  updateBurning(dt);
+  for (const r of robots) {
+    if (!MP) { robotStep(r, dt); continue; }
+    const me = player; player = mpTarget(r); // multiplayer: robotten går efter den nærmeste spiller
+    try { robotStep(r, dt); } finally { player = me; }
   }
   // Robotter skubber hinanden lidt væk, så de ikke klumper
   for (let i = 0; i < robots.length; i++) for (let j = i + 1; j < robots.length; j++) {
@@ -1619,7 +1649,8 @@ function updateBullets(dt) {
   for (let i = bullets.length - 1; i >= 0; i--) {
     const b = bullets[i], ox = b.x, oy = b.y;
     if (b.homing) {
-      let diff = Math.atan2(player.y - b.y, player.x - b.x) - b.angle; diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+      const ht = MP ? mpTarget(b) : player;
+      let diff = Math.atan2(ht.y - b.y, ht.x - b.x) - b.angle; diff = Math.atan2(Math.sin(diff), Math.cos(diff));
       b.angle += clamp(diff, -1.8 * dt, 1.8 * dt);
       const sp = Math.min(330, Math.hypot(b.vx, b.vy) + 80 * dt);
       b.vx = Math.cos(b.angle) * sp; b.vy = Math.sin(b.angle) * sp;
@@ -1636,18 +1667,21 @@ function updateBullets(dt) {
     b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
     let dead = b.life <= 0 || b.x < 0 || b.y < 0 || b.x > WORLD.w || b.y > WORLD.h;
     if (!dead && !b.seek && !b.thru) for (const w of walls) if (segHitsRect(ox, oy, b.x, b.y, w)) { dead = true; burst(ox, oy, '#cfd6df', 5, 140); break; }
-    if (!dead && b.plasma) {
+    if (!dead && b.plasma && b.owner !== 'v') {
       builtInBox(Math.min(ox, b.x) - 12, Math.min(oy, b.y) - 12, Math.max(ox, b.x) + 12, Math.max(oy, b.y) + 12, w => {
         if (!b.hitWalls[w.i] && segHitsBox(ox, oy, b.x, b.y, w.x - 12, w.y - 12, w.x + w.w + 12, w.y + w.h + 12)) { b.hitWalls[w.i] = 1; damageWall(w, w.maxHp * 0.7, true); burst(b.x, b.y, '#7dffcf', 8, 180); }
         return false; });
-    } else if (!dead && b.owner !== 'p') {
+    } else if (!dead && b.owner !== 'p' && b.owner !== 'v') {
       const hw = builtInBox(Math.min(ox, b.x), Math.min(oy, b.y), Math.max(ox, b.x), Math.max(oy, b.y), w => segHitsRect(ox, oy, b.x, b.y, w));
       if (hw) { damageWall(hw, b.dmg); dead = true; burst(ox, oy, '#c9a06a', 5, 140); }
     }
     if (!dead) {
       if (b.owner === 'p') {
         for (const r of robots) if (Math.hypot(r.x - b.x, r.y - b.y) < r.r + 4) { hitRobot(r, b); dead = true; break; }
-      } else if (Math.hypot(player.x - b.x, player.y - b.y) < player.r + (b.plasma ? 14 : b.big ? 8 : 4)) { hitPlayer(b.dmg); dead = true; if (b.plasma) { burst(b.x, b.y, '#7dffcf', 18, 260); rings.push({ x: b.x, y: b.y, t: 0.25, tele: true }); } }
+        if (!dead && MP && MP.ff) for (const o of others) if (!o.dead && Math.hypot(o.x - b.x, o.y - b.y) < o.r + 4) { mpFF(o, b.dmg * CFG.ffMul); dead = true; break; } // friendly fire
+      } else if (b.owner !== 'v') {
+        for (const t of mpAll()) if (!t.dead && Math.hypot(t.x - b.x, t.y - b.y) < t.r + (b.plasma ? 14 : b.big ? 8 : 4)) { mpHit(t, b.dmg); dead = true; if (b.plasma) { burst(b.x, b.y, '#7dffcf', 18, 260); rings.push({ x: b.x, y: b.y, t: 0.25, tele: true }); } break; }
+      }
     }
     if (dead) { if (aprilMode && b.owner === 'p') aprilBoom(b); bullets.splice(i, 1); }
   }
@@ -1725,6 +1759,7 @@ function draw() {
   drawSupplies();
   drawGrenades();
   for (const wd of weaponDrops) {
+    if (mpTaken(wd)) continue;
     const W = WEAPONS[wd.type], bob = Math.sin(wd.t * 3) * 4, pulse = 0.5 + 0.5 * Math.sin(wd.t * 5);
     ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(wd.x, wd.y + 20, 22, 7, 0, 0, Math.PI * 2); ctx.fill();
     ctx.globalAlpha = 0.25 + 0.25 * pulse; circle(wd.x, wd.y + bob, 34); ctx.fillStyle = '#ffd84a'; ctx.fill(); ctx.globalAlpha = 1;
@@ -1745,14 +1780,15 @@ function draw() {
     ctx.font = '900 ' + (P.icon.length > 1 ? 15 : 22) + 'px system-ui,sans-serif'; ctx.fillText(P.icon, pu.x, pu.y + bob + 1);
   }
   for (const r of robots) drawRobot(r);
+  mpDrawOthers();
   if (state !== 'over') drawPlayer();
 
   // Kugler
   for (const b of bullets) {
     const a = Math.atan2(b.vy, b.vx);
     ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(a);
-    ctx.fillStyle = b.owner === 'p' ? (b.strong ? '#ff8a3d' : '#ffd86b') : b.ghost ? '#9fe8ff' : '#ff5a4a';
-    if (aprilMode && b.owner === 'p') { // granat der snurrer
+    ctx.fillStyle = b.owner === 'p' || b.team ? (b.strong ? '#ff8a3d' : '#ffd86b') : b.ghost ? '#9fe8ff' : '#ff5a4a';
+    if (aprilMode && (b.owner === 'p' || b.april)) { // granat der snurrer
       ctx.rotate(time * 14); ctx.scale(1.5, 1.5); ctx.fillStyle = '#4f7a3a'; circle(0, 0, 6); ctx.fill();
       ctx.fillStyle = '#2a2f38'; ctx.fillRect(-2, -9, 4, 4); ctx.strokeStyle = '#c9d3df'; ctx.lineWidth = 1.5; circle(3, -8, 2.5); ctx.stroke();
       ctx.fillStyle = 'rgba(255,255,255,.35)'; circle(-2, -2, 2); }
@@ -1827,7 +1863,7 @@ function draw() {
     if (r.state === 'chase' && r.alertT > 0) label('!', r.x, r.y - r.r - 24, '#ff4a3d');
     else if (r.state === 'search') label('?', r.x, r.y - r.r - 24, '#ffc23d');
   }
-  if (state !== 'over') {
+  if (state !== 'over' && !player.dead) {
     const p = player;
     bar(p.x - 28, p.y - p.r - 18, 56, 6, p.hp / player.maxHp, hpColor(p.hp / player.maxHp));
     const pw = (56 - (p.maxAmmo - 1) * 2) / p.maxAmmo;
@@ -1946,6 +1982,7 @@ function drawRobot(r) {
 }
 function drawPlayer() {
   const p = player;
+  if (p.dead) { mpDrawDowned(p); return; }
   ctx.save(); ctx.translate(p.x, p.y);
   ctx.globalAlpha = p.hidden ? (p.reveal > 0 ? 0.9 : 0.6) : 1;
   ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(3, 7, p.r, p.r * 0.7, 0, 0, Math.PI * 2); ctx.fill();
@@ -2077,6 +2114,7 @@ function drawPlayer() {
 }
 
 function drawHUD() {
+  mpHud();
   // På små skærme skaleres hele HUD'en ned, så den ikke fylder hele telefonen
   const hs = clamp(Math.min(VW / 760, VH / 520), 0.62, 1), realW = VW, realH = VH;
   ctx.save(); ctx.scale(hs, hs); VW = VW / hs; VH = VH / hs;
@@ -2278,7 +2316,7 @@ function menu() {
   panel.innerHTML = `<h1>Robotjagt</h1><p>Overlev så mange bølger af robotter som muligt. <span style="color:#93a0b0">· v${VERSION}</span></p>
     <div class="diff">${Object.entries(DIFFS).map(([k, d]) => `<button data-d="${k}" class="${k === difficulty ? 'on' : ''}" style="${k === difficulty ? 'border-color:' + d.color : ''}">${d.name}</button>`).join('')}</div>
     <div class="diff-info">${{ easy: 'Dobbelt liv, dobbelt så hurtig genladning, robotterne er halvt så stærke. Miniboss hver 5. bølge, boss hver 20., ingen ultra-boss. Mellemrum sigter automatisk.', normal: 'Det almindelige spil.', hard: 'Du er halvt så stærk, robotterne dobbelt så stærke. Ingen genladning – find skud og træ på banen. Du kan ikke gå gennem dine egne vægge.' }[difficulty]}</div>
-    <div class="menu-btns"><button id="go">Start spil</button><button class="sec" id="admstart">⚙ Admin-tilstand</button><button class="sec" id="aprilstart">🤡 Aprilsnar</button><button class="sec" id="hsnow">🏆 Highscore</button><button class="sec" id="lockernow">🎽 Locker</button><button class="sec" id="codesnow">🔑 Koder</button><button class="sec" id="lognow">Ændringslog</button></div>${pendingSkin ? (pendingSkin === 'diamond' ? '<p class="tip" style="color:#9fefff">💎 Diamant-skin er klar til næste runde</p>' : pendingSkin === 'rainbow' ? '<p class="tip" style="color:#8fd0ff">🌈 Regnbue-skin er klar til næste runde</p>' : pendingSkin === 'flame' ? '<p class="tip" style="color:#ff8a3a">🔥 Flamme-skin er klar til næste runde</p>' : pendingSkin === 'angel' ? '<p class="tip" style="color:#fff3b0">😇 Engle-skin er klar til næste runde</p>' : pendingSkin === 'owner' ? '<p class="tip" style="color:#ffd84a">👑 Ejer-skin er klar til næste runde</p>' : '<p class="tip" style="color:#ffd84a">✨ Guld-skin er klar til næste runde</p>') : ''}
+    <div class="menu-btns"><button id="go">Start spil</button><button class="sec" id="mpnow">👥 Multiplayer</button><button class="sec" id="admstart">⚙ Admin-tilstand</button><button class="sec" id="aprilstart">🤡 Aprilsnar</button><button class="sec" id="hsnow">🏆 Highscore</button><button class="sec" id="lockernow">🎽 Locker</button><button class="sec" id="codesnow">🔑 Koder</button><button class="sec" id="lognow">Ændringslog</button></div>${pendingSkin ? (pendingSkin === 'diamond' ? '<p class="tip" style="color:#9fefff">💎 Diamant-skin er klar til næste runde</p>' : pendingSkin === 'rainbow' ? '<p class="tip" style="color:#8fd0ff">🌈 Regnbue-skin er klar til næste runde</p>' : pendingSkin === 'flame' ? '<p class="tip" style="color:#ff8a3a">🔥 Flamme-skin er klar til næste runde</p>' : pendingSkin === 'angel' ? '<p class="tip" style="color:#fff3b0">😇 Engle-skin er klar til næste runde</p>' : pendingSkin === 'owner' ? '<p class="tip" style="color:#ffd84a">👑 Ejer-skin er klar til næste runde</p>' : '<p class="tip" style="color:#ffd84a">✨ Guld-skin er klar til næste runde</p>') : ''}
     ${portrait ? '<p class="tip">📱 Spillet er bedst, når du vender telefonen på langs.</p>' : ''}
     ${TOUCH && !canFullscreen() ? '<p class="tip">Tip: Del → "Føj til hjemmeskærm" giver fuld skærm.</p>' : ''}
     <details ${TOUCH ? '' : 'open'}><summary>Sådan spiller du</summary>
@@ -2325,6 +2363,7 @@ ${controls}
   document.getElementById('lognow').onclick = openLog;
   document.getElementById('hsnow').onclick = () => openHighscore('menu');
   document.getElementById('codesnow').onclick = openCodes;
+  document.getElementById('mpnow').onclick = () => openMultiplayer();
   document.getElementById('lockernow').onclick = openLocker;
   panel.querySelectorAll('[data-d]').forEach(b => b.onclick = () => { difficulty = b.dataset.d; try { localStorage.setItem('robotjagt_diff', difficulty); } catch (e) {} menu(); });
 }
@@ -2334,6 +2373,7 @@ let aprilMode = false; // 🤡 aprilsnar: dine skud er granater – runden komme
 function pDmg() { return D.playerDmg * (player.skinDmg || 1); }
 function start(admin) { D = DIFFS[difficulty]; reset(); if (!D.autoReload) player.ammo = CFG.hardStartAmmo; if (!D.autoMats) materials = CFG.startMaterials; player.skin = pendingSkin || equippedSkin(); if (player.skin) markSkin(player.skin); if (player.skin === 'owner') lsSet('robotjagt_locker', '1'); if (player.skin === 'flame') player.skinDmg = 1.1; if (player.skin === 'angel') { player.skinDmg = 2; player.speedMul = 2; player.reloadMul = 2; player.revives = 5; } if (player.skin === 'owner') { player.rateMul = 2; player.ammoMul = 3; player.skinDmg = 6; player.speedMul = 3; player.reloadMul = 3; player.revives = 5; player.maxHp *= 6; player.hp = player.maxHp; } pendingSkin = null; adminFree = false; secretBuf = ''; for (const k in cheats) cheats[k] = false; adminMode = !!admin; usedAdmin = adminMode; state = 'play'; overlay.classList.add('hidden'); last = performance.now(); if (aprilMode) popups.push({ x: player.x, y: player.y - 70, text: '🤡 APRILSNAR – du skyder granater!', color: '#ff9de2', t: -1 }); }
 function pause() {
+  if (MP) { mpPause(); return; }
   state = 'pause'; mouse.down = false; keys.clear();
   showPanel(`<h1>Pause</h1><p>Bølge ${wave} · ${kills} robotter nedlagt</p>`, 'Fortsæt', resume);
   const ab = document.createElement('button'); ab.className = 'sec'; ab.textContent = adminMode ? '⚙ Admin' : '🔒 Admin'; ab.style.marginLeft = '8px';
@@ -2546,6 +2586,7 @@ function secretKey(k) {
 }
 function codeOk(t) { let h = 5381; for (const c of t.trim().toLowerCase()) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0; return h === 3087473219; }
 function openAdmin() {
+  if (MP) return; // ingen admin i multiplayer
   lastAdminKeyAt = performance.now(); // den E, der åbnede panelet, skal ikke straks lukke det igen
   if (state === 'play' || state === 'pause') adminFrom = state;
   state = 'admin'; mouse.down = false; keys.clear();
@@ -2671,6 +2712,493 @@ function adminAction(a) {
 }
 
 // ---------- Løkke ----------
+// =====================================================================
+// 👥 MULTIPLAYER – op til 3 spillere på hold
+// Den, der laver koden, er "vært": værtens spil styrer robotter, bølger, powerups, vægge og meteorer.
+// Hver spiller styrer selv sin egen figur og sine egne skud og sender det til værten.
+// Forbindelsen går direkte mellem spillerne (WebRTC). PeerJS bruges kun til at finde hinanden via koden.
+// =====================================================================
+let MP = null;          // null = alene. Ellers { role: 'host' | 'client', peer, conns (vært), conn (klient), id, code, ff, mode, names, ... }
+let others = [];        // de andre spillere (tegnes, og robotterne kan gå efter dem)
+let mpUid = 0, mpFx = [], mpFxFrom = '';
+const MP_MAX = 3, MP_PREFIX = 'robotjagt-mp-';
+const MP_MODES = { easy: 'Let', normal: 'Normal', hard: 'Svær', april: '🤡 Aprilsnar' };
+const mpQ = new URLSearchParams(location.search);
+function mpPeerOpts() { // ?peerhost=… bruges kun til test med egen forbindelsesserver
+  const h = mpQ.get('peerhost');
+  return h ? { host: h, port: +(mpQ.get('peerport') || 9000), path: '/', secure: false, debug: 0 } : { debug: 0 };
+}
+function loadPeerJS() {
+  if (window.Peer) return Promise.resolve();
+  const srcs = ['https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js', 'https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js'];
+  if (mpQ.get('peerjs')) srcs.unshift(mpQ.get('peerjs'));
+  return srcs.reduce((pr, src) => pr.catch(() => new Promise((ok, fail) => {
+    const s = document.createElement('script'); s.src = src; s.onload = () => (window.Peer ? ok() : fail()); s.onerror = fail; document.head.appendChild(s);
+  })), Promise.reject());
+}
+function mpNewCode() { const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let c = ''; for (let i = 0; i < 5; i++) c += A[Math.floor(Math.random() * A.length)]; return c; }
+function mpMyName() { return MP && MP.names[MP.id] || lsGet('robotjagt_name', '') || 'Spiller'; }
+function mpSend(msg, conn) { try { const c = conn || (MP && MP.conn); if (c && c.open) c.send(msg); } catch (e) {} }
+function mpBroadcast(msg) { if (MP && MP.role === 'host') for (const c of MP.conns.values()) mpSend(msg, c); }
+function mpLeave() { if (!MP) return; const m = MP; MP = null; others = []; try { m.peer.destroy(); } catch (e) {} }
+function mpAll() { return MP ? [player, ...others] : [player]; }
+function mpHit(t, dmg, quiet) { const me = player; player = t; try { hitPlayer(dmg, quiet); } finally { player = me; } }
+function mpTarget(r) { // robotterne går efter den nærmeste spiller, der lever
+  let best = player.dead ? null : player, bd = best ? Math.hypot(player.x - r.x, player.y - r.y) : Infinity;
+  for (const o of others) if (!o.dead) { const d = Math.hypot(o.x - r.x, o.y - r.y); if (d < bd) { bd = d; best = o; } }
+  return best || player;
+}
+function mpTaken(o) { return !!(MP && o.id && (MP.took.has(o.id) || (o.takenBy && o.takenBy.includes(MP.id)))); }
+// Våben, granater og kasser: forsvinder kun hos den, der samler op – de andre kan stadig tage dem
+function mpPickedUp(list, i) {
+  if (!MP) { list.splice(i, 1); return; }
+  const o = list[i]; if (!o.id) o.id = ++mpUid; MP.took.add(o.id);
+  if (MP.role === 'client') { mpSend({ t: 'take', id: o.id }); return; }
+  (o.takenBy = o.takenBy || []).push('host'); mpCleanTaken(list, o);
+}
+function mpCleanTaken(list, o) { // væk fra banen, når alle på holdet har taget den
+  const ids = ['host', ...MP.conns.keys()];
+  if (ids.every(x => o.takenBy && o.takenBy.includes(x))) { const i = list.indexOf(o); if (i >= 0) list.splice(i, 1); }
+}
+function mpMe() {
+  const p = player;
+  return { x: Math.round(p.x), y: Math.round(p.y), angle: Math.round(p.angle * 100) / 100, hp: Math.round(p.hp), maxHp: Math.round(p.maxHp), r: p.r,
+    skin: p.skin || null, weapon: p.weapon, hidden: !!p.hidden, reveal: Math.round((p.reveal || 0) * 10) / 10, flash: Math.round((p.flash || 0) * 100) / 100,
+    dead: !!p.dead, invuln: Math.round((p.invuln || 0) * 10) / 10, name: mpMyName() };
+}
+
+// ---------- Lobby ----------
+function mpPanel(html) { panel.innerHTML = html; overlay.classList.remove('hidden'); }
+function openMultiplayer(msg) {
+  state = 'menu';
+  if (MP) { mpLobby(); return; }
+  mpPanel(`<h1>👥 Multiplayer</h1><p>Spil sammen med op til 2 venner. I er på samme hold og skal nå så langt som muligt.</p>
+    <p><input id="mpname" maxlength="16" autocomplete="off" placeholder="Dit navn" value="${esc(lsGet('robotjagt_name', ''))}"></p>
+    <div class="menu-btns"><button id="mphost">Lav en kode</button></div>
+    <form id="mpjoinf"><p style="margin-top:14px">Har du en vens kode?</p><input id="mpcode" maxlength="5" autocomplete="off" placeholder="Kode" style="text-transform:uppercase;letter-spacing:3px">
+    <div class="menu-btns"><button type="submit" class="sec">Kom med</button></div></form>
+    <div class="err" id="mpmsg">${msg ? esc(msg) : ''}</div>
+    <div class="menu-btns"><button class="sec" id="mpback">Tilbage</button></div>`);
+  const err = t => { document.getElementById('mpmsg').textContent = t; };
+  const nameOk = () => { const n = document.getElementById('mpname').value.trim().slice(0, 16); if (!n) { err('Skriv dit navn først'); return null; } lsSet('robotjagt_name', n); return n; };
+  document.getElementById('mpback').onclick = menu;
+  document.getElementById('mphost').onclick = () => { const n = nameOk(); if (n) mpHost(n); };
+  document.getElementById('mpjoinf').onsubmit = e => {
+    e.preventDefault(); const n = nameOk(); if (!n) return;
+    const c = document.getElementById('mpcode').value.trim().toUpperCase();
+    if (c.length < 5) { err('Skriv hele koden (5 tegn)'); return; }
+    mpJoin(n, c);
+  };
+}
+function mpWait(t) { mpPanel(`<h1>👥 Multiplayer</h1><p>${t}</p><div class="menu-btns"><button class="sec" id="mpcancel">Annullér</button></div>`); document.getElementById('mpcancel').onclick = () => { mpLeave(); openMultiplayer(); }; }
+async function mpHost(name) {
+  mpWait('Laver en kode …');
+  try { await loadPeerJS(); } catch (e) { openMultiplayer('Kunne ikke hente multiplayer-forbindelsen. Tjek internettet.'); return; }
+  const tryOpen = n => {
+    const code = mpNewCode(), peer = new Peer(MP_PREFIX + code, mpPeerOpts());
+    peer.on('open', () => {
+      MP = { role: 'host', peer, code, conns: new Map(), players: new Map(), names: { host: name }, ff: false, id: 'host', mode: aprilMode ? 'april' : difficulty, started: false,
+        took: new Set(), revT: {} };
+      mpLobby();
+    });
+    peer.on('error', er => {
+      if (er.type === 'unavailable-id' && n < 4) { peer.destroy(); tryOpen(n + 1); return; }
+      if (!MP || MP.peer !== peer) { try { peer.destroy(); } catch (e) {} openMultiplayer('Kunne ikke lave en kode (' + (er.type || er) + ')'); }
+    });
+    peer.on('connection', conn => mpHostConn(conn));
+    peer.on('disconnected', () => { try { if (MP && MP.peer === peer) peer.reconnect(); } catch (e) {} });
+  };
+  tryOpen(0);
+}
+function mpHostConn(conn) {
+  conn.on('open', () => {
+    if (!MP || MP.role !== 'host') { try { conn.close(); } catch (e) {} return; }
+    if (MP.started) { mpSend({ t: 'nope', why: 'Spillet er allerede i gang. Vent til de er færdige.' }, conn); setTimeout(() => conn.close(), 400); return; }
+    if (MP.conns.size >= MP_MAX - 1) { mpSend({ t: 'nope', why: 'Holdet er fuldt (3 spillere).' }, conn); setTimeout(() => conn.close(), 400); return; }
+    const id = 'p' + (++mpUid); MP.conns.set(id, conn);
+    conn.on('data', d => { try { mpHostMsg(id, d); } catch (e) { reportError(e); } });
+    conn.on('close', () => mpDrop(id));
+    conn.on('error', () => mpDrop(id));
+  });
+}
+function mpLobbyMsg() { return { t: 'lobby', names: MP.names, ff: MP.ff, mode: MP.mode }; }
+function mpLobby() {
+  if (!MP) { menu(); return; }
+  state = 'menu';
+  const host = MP.role === 'host', names = Object.entries(MP.names);
+  mpPanel(`<h1>👥 Multiplayer</h1>
+    ${host ? `<p>Jeres kode:</p><div class="mpcode">${MP.code}</div><p class="muted">Giv koden til dine venner. De trykker på 👥 Multiplayer og skriver den.</p>`
+           : `<p>Du er med på <b>${esc(MP.names.host || '')}</b>s hold.</p>`}
+    <p><b>Holdet (${names.length}/${MP_MAX}):</b> ${names.map(([k, n]) => esc(n) + (k === MP.id ? ' (dig)' : '') + (k === 'host' ? ' 👑' : '')).join(' · ')}</p>
+    <div class="diff">${Object.entries(MP_MODES).map(([k, n]) => `<button data-mpm="${k}" class="${k === MP.mode ? 'on' : ''}" ${host ? '' : 'disabled'}>${n}</button>`).join('')}</div>
+    <p><label style="cursor:pointer"><input type="checkbox" id="mpff" style="width:auto;margin-right:8px" ${MP.ff ? 'checked' : ''} ${host ? '' : 'disabled'}>Friendly fire – I kan skyde hinanden</label></p>
+    <div class="menu-btns">${host ? `<button id="mpstart">Start spil${names.length < 2 ? ' (alene)' : ''}</button>` : ''}<button class="sec" id="mpleave">Forlad</button></div>
+    ${host ? '' : '<p class="muted">Venter på, at værten starter spillet …</p>'}<div class="err" id="mpmsg"></div>`);
+  document.getElementById('mpleave').onclick = () => { mpLeave(); menu(); };
+  if (!host) return;
+  panel.querySelectorAll('[data-mpm]').forEach(b => b.onclick = () => { MP.mode = b.dataset.mpm; mpBroadcast(mpLobbyMsg()); mpLobby(); });
+  document.getElementById('mpff').onchange = e => { MP.ff = e.target.checked; mpBroadcast(mpLobbyMsg()); };
+  document.getElementById('mpstart').onclick = () => {
+    MP.started = true; let slot = 0;
+    for (const [id, c] of MP.conns) mpSend({ t: 'start', mode: MP.mode, ff: MP.ff, slot: ++slot, names: MP.names }, c);
+    mpStartGame(0);
+  };
+}
+function mpStartGame(slot) {
+  difficulty = MP.mode === 'april' ? 'normal' : MP.mode; aprilMode = MP.mode === 'april';
+  if (TOUCH) goFullscreen();
+  start(false);
+  player.x += slot * 60; player.y += slot * 30;
+  others = []; MP.revT = {}; MP.took = new Set(); MP.reqPU = new Set(); MP.dq = new Map(); MP.burn = {}; MP.shots = []; MP.snapT = 0; MP.stT = 0; MP.over = false; mpFx = [];
+  if (MP.role === 'host') { MP.players = new Map(); }
+  popups.push({ x: player.x, y: player.y - 90, text: '👥 Multiplayer – ' + Object.values(MP.names).join(', '), color: '#8fd0ff', t: -1.2 });
+}
+function mpDrop(id) {
+  if (!MP || MP.role !== 'host' || !MP.conns.has(id)) return;
+  MP.conns.delete(id); const name = MP.names[id]; delete MP.names[id]; MP.players.delete(id);
+  others = [...MP.players.values()];
+  if (state === 'play' && name) popups.push({ x: player.x, y: player.y - 60, text: name + ' forlod spillet', color: '#ffb0a0', t: 0 });
+  if (!MP.started) { mpBroadcast(mpLobbyMsg()); mpLobby(); }
+  // det, de manglede at samle op, kan nu forsvinde
+  for (const list of [weaponDrops, grenadeDrops, supplies]) for (const o of list.slice()) if (o.takenBy) mpCleanTaken(list, o);
+}
+
+// ---------- Klient: kom med i en vens spil ----------
+async function mpJoin(name, code) {
+  mpWait('Forbinder til ' + code + ' …');
+  try { await loadPeerJS(); } catch (e) { openMultiplayer('Kunne ikke hente multiplayer-forbindelsen. Tjek internettet.'); return; }
+  const peer = new Peer(undefined, mpPeerOpts());
+  let failed = false;
+  const fail = t => { if (failed) return; failed = true; if (MP && MP.peer === peer) MP = null; try { peer.destroy(); } catch (e) {} openMultiplayer(t); };
+  peer.on('error', er => { if (!MP || !MP.id) fail(er.type === 'peer-unavailable' ? 'Fandt intet spil med koden ' + code : 'Kunne ikke forbinde (' + (er.type || er) + ')'); });
+  peer.on('open', () => {
+    const conn = peer.connect(MP_PREFIX + code, { reliable: true });
+    MP = { role: 'client', peer, conn, code, id: null, names: {}, ff: false, mode: 'normal', took: new Set(), revT: {}, reqPU: new Set(), dq: new Map(), burn: {}, shots: [] };
+    setTimeout(() => { if (MP && MP.conn === conn && !MP.id) fail('Fandt intet spil med koden ' + code); }, 12000);
+    conn.on('open', () => mpSend({ t: 'hello', name, v: VERSION }, conn));
+    conn.on('data', d => { try { mpClientMsg(d); } catch (e) { reportError(e); } });
+    conn.on('close', () => { if (MP && MP.conn === conn) mpHostGone(); });
+  });
+}
+function mpHostGone() {
+  const wasPlaying = state === 'play';
+  mpLeave(); state = 'menu';
+  mpPanel(`<h1>👥 Multiplayer</h1><p>Forbindelsen til værten blev afbrudt${wasPlaying ? ' – spillet er slut' : ''}.</p><div class="menu-btns"><button id="mpok">OK</button></div>`);
+  document.getElementById('mpok').onclick = menu;
+}
+function mpClientMsg(d) {
+  if (!MP) return;
+  if (d.t === 'nope') { const w = d.why; mpLeave(); openMultiplayer(w); return; }
+  if (d.t === 'welcome') { MP.id = d.id; MP.names = d.names; MP.ff = d.ff; MP.mode = d.mode; mpLobby(); return; }
+  if (d.t === 'lobby') { MP.names = d.names; MP.ff = d.ff; MP.mode = d.mode; if (state !== 'play' && state !== 'over') mpLobby(); return; }
+  if (d.t === 'start') { MP.mode = d.mode; MP.ff = d.ff; MP.names = d.names; mpStartGame(d.slot); return; }
+  if (d.t === 'tolobby') { mpLobby(); return; }
+  if (state !== 'play' && d.t !== 'over') return;
+  if (d.t === 'snap') mpApplySnap(d);
+  else if (d.t === 'buff') mpBuffFx(d.type, d.x, d.y, d.by);
+  else if (d.t === 'rev') mpRevived(d.by);
+  else if (d.t === 'ff') mpTakeFF(d.dmg);
+  else if (d.t === 'over') mpGameOver(d);
+}
+
+// ---------- Vært: beskeder fra spillerne ----------
+function mpHostMsg(id, d) {
+  if (!MP || MP.role !== 'host') return;
+  const conn = MP.conns.get(id); if (!conn) return;
+  if (d.t === 'hello') {
+    if (d.v !== VERSION) { mpSend({ t: 'nope', why: 'I har ikke samme version af spillet (v' + VERSION + ' og v' + d.v + '). Genindlæs siden begge to.' }, conn); setTimeout(() => conn.close(), 400); return; }
+    let n = String(d.name || 'Spiller').slice(0, 16); if (Object.values(MP.names).includes(n)) n = (n + ' 2').slice(0, 16);
+    MP.names[id] = n; mpSend({ t: 'welcome', id, names: MP.names, ff: MP.ff, mode: MP.mode }, conn); mpBroadcast(mpLobbyMsg()); if (!MP.started) mpLobby(); return;
+  }
+  if (state !== 'play') return;
+  if (d.t === 'st') {
+    let p = MP.players.get(id);
+    if (!p) { p = { id, remote: true, pend: 0, hard: false, x: d.s.x, y: d.s.y }; MP.players.set(id, p); others = [...MP.players.values()]; }
+    const ox = p.x, oy = p.y, first = p.tx === undefined; Object.assign(p, d.s); p.tx = d.s.x; p.ty = d.s.y; if (!first) { p.x = ox; p.y = oy; }
+    for (const [rid, dmg, q] of d.dr || []) { const r = robots.find(o => o.id === rid); if (r) damageRobot(r, dmg, r.x, r.y, !!q); }
+    for (const k in d.burn || {}) { const r = robots.find(o => o.id === +k); if (r) { r.burnT = CFG.burnTime; r.burnDps = d.burn[k]; } }
+    for (const s of d.sh || []) bullets.push({ x: s[0], y: s[1], vx: s[2], vy: s[3], life: s[4], owner: 'v', team: true, strong: !!s[5], april: !!s[6], from: id });
+    return;
+  }
+  if (d.t === 'pu') { const i = powerups.findIndex(o => o.id === d.id); if (i >= 0) mpGiveBuff(i, MP.names[id]); return; }
+  if (d.t === 'take') {
+    for (const list of [weaponDrops, grenadeDrops, supplies]) { const o = list.find(x => x.id === d.id); if (o) { (o.takenBy = o.takenBy || []).push(id); mpCleanTaken(list, o); } }
+    return;
+  }
+  if (d.t === 'build') { mpBuildAt(d.x, d.y); return; }
+  if (d.t === 'ff') { if (d.to === 'host') mpTakeFF(d.dmg); else mpSend({ t: 'ff', dmg: d.dmg }, MP.conns.get(d.to)); return; }
+  if (d.t === 'rev') { if (d.to === 'host') mpRevived(MP.names[id]); else mpSend({ t: 'rev', by: MP.names[id] }, MP.conns.get(d.to)); return; }
+  if (d.t === 'fx') { mpFxFrom = id; try { mpBoomFx(d.k, d.x, d.y); } finally { mpFxFrom = ''; } }
+}
+function mpBuildAt(x, y) { // en holdkammerat har bygget en væg (materialet er allerede brugt hos dem)
+  if (x < 0 || y < 0 || x >= WORLD.w || y >= WORLD.h) return;
+  const i = cellOf(x, y); if (staticSolid[i] || builtAt[i]) return;
+  const w = { x: (i % GW) * GS, y: ((i / GW) | 0) * GS, w: GS, h: GS, hp: CFG.wallHp, maxHp: CFG.wallHp, i, flash: 0 };
+  builtWalls.push(w); builtAt[i] = w; flowDirty = true;
+}
+function mpGiveBuff(i, by) { // buffs: alle på holdet får dem
+  const pu = powerups[i]; powerups.splice(i, 1);
+  mpBroadcast({ t: 'buff', type: pu.type, x: Math.round(pu.x), y: Math.round(pu.y), by: by || mpMyName() });
+  mpBuffFx(pu.type, pu.x, pu.y, by || mpMyName());
+}
+function mpBuffFx(type, x, y, by) {
+  const P = POWER[type]; if (!P) return;
+  if (!player.dead) applyPowerup(type, false);
+  burst(x, y, P.color, 24, 260);
+  popups.push({ x: player.x, y: player.y - 40, text: P.name + (by && by !== mpMyName() ? ' (fra ' + by + ')' : ''), color: P.color, t: 0 });
+}
+function mpBoomFx(k, x, y) { // en holdkammerats granat eller missil – kun det, man ser
+  if (k === 'g') { rings.push({ x, y, t: 0, grenade: true }); burst(x, y, '#ffdf6b', 40, 700); burst(x, y, '#ff7a2a', 40, 560); burst(x, y, '#5a5f66', 24, 420); }
+  else { rings.push({ x, y, t: 0 }); burst(x, y, '#ffdf6b', 30, 520); burst(x, y, '#ff7a2a', 30, 420); }
+}
+
+// ---------- Vært: send verden til spillerne ----------
+const MP_SKIP = new Set(['target', 'lastSeen', 'wallTarget', 'hitWalls', 'sent', 'takenBy', 'tx', 'ty']);
+function mpOut(o) { const r = {}; for (const k in o) { if (MP_SKIP.has(k)) continue; const v = o[k]; r[k] = typeof v === 'number' ? Math.round(v * 10) / 10 : v; } return r; }
+const mpR = v => Math.round(v);
+function mpHostTick(dt) {
+  const k = Math.min(1, dt * 14);
+  for (const o of others) if (o.tx !== undefined) { o.x += (o.tx - o.x) * k; o.y += (o.ty - o.y) * k; }
+  mpReviveCheck(dt);
+  MP.snapT -= dt;
+  if (MP.snapT <= 0) { MP.snapT = 1 / 15; mpSendSnaps(); }
+  if (!MP.over && player.dead && others.every(o => o.dead)) mpEnd();
+}
+function mpSendSnaps() {
+  for (const r of robots) if (!r.id) r.id = ++mpUid;
+  for (const list of [powerups, weaponDrops, grenadeDrops, supplies]) for (const o of list) if (!o.id) o.id = ++mpUid;
+  const newRings = rings.filter(g => !g.sent); newRings.forEach(g => { g.sent = true; });
+  const fx = mpFx; mpFx = [];
+  const tk = o => o.takenBy || [];
+  const base = {
+    t: 'snap', wave, kills, bt: bannerText, bT: Math.round(bannerT * 10) / 10,
+    rb: robots.map(mpOut),
+    pw: powerups.map(o => [o.id, o.type, mpR(o.x), mpR(o.y)]),
+    wd: weaponDrops.map(o => [o.id, o.type, mpR(o.x), mpR(o.y), tk(o)]),
+    gd: grenadeDrops.map(o => [o.id, mpR(o.x), mpR(o.y), tk(o)]),
+    sp: supplies.map(o => [o.id, o.type, mpR(o.x), mpR(o.y), tk(o)]),
+    wl: builtWalls.map(w => [w.i, mpR(w.hp), w.maxHp]),
+    mt: meteors.map(mpOut),
+    gf: grenadesFlying.filter(g => !g.remote).map(g => [mpR(g.x0), mpR(g.y0), mpR(g.tx), mpR(g.ty), Math.round(g.t * 100) / 100, Math.round(g.dur * 100) / 100]),
+    ms: missiles.map(m => [mpR(m.x), mpR(m.y), Math.round(m.angle * 100) / 100]),
+    pl: [{ ...mpMe(), id: 'host' }, ...others.map(o => ({ id: o.id, x: mpR(o.tx ?? o.x), y: mpR(o.ty ?? o.y), angle: o.angle, hp: o.hp, maxHp: o.maxHp, r: o.r, skin: o.skin, weapon: o.weapon, hidden: o.hidden, reveal: o.reveal, flash: o.flash, dead: o.dead, invuln: o.invuln, name: o.name }))]
+  };
+  for (const [id, c] of MP.conns) {
+    const p = MP.players.get(id);
+    const msg = { ...base,
+      bl: bullets.filter(b => b.from !== id).map(b => [mpR(b.x), mpR(b.y), mpR(b.vx), mpR(b.vy),
+        (b.plasma ? 1 : 0) | (b.big ? 2 : 0) | (b.ghost ? 4 : 0) | (b.homing ? 8 : 0) | (b.owner === 'p' || b.team ? 16 : 0) | (b.strong ? 32 : 0) | ((b.owner === 'p' && aprilMode) || b.april ? 64 : 0)]),
+      rg: newRings.filter(g => g.from !== id).map(g => ({ ...g, sent: undefined, from: undefined })),
+      fx: fx.filter(f => f[7] !== id).map(f => f.slice(0, 7)) };
+    if (p && p.pend > 0) { msg.hit = [Math.round(p.pend * 10) / 10, p.hard ? 1 : 0]; p.pend = 0; p.hard = false; }
+    mpSend(msg, c);
+  }
+}
+
+// ---------- Klient: verden fra værten ----------
+function mpApplySnap(s) {
+  wave = s.wave; kills = s.kills;
+  if (s.bt !== bannerText || s.bT > bannerT + 0.3) { bannerText = s.bt; bannerT = s.bT; }
+  const oldR = new Map(robots.map(r => [r.id, r]));
+  robots = s.rb.map(n => {
+    const o = oldR.get(n.id);
+    if (o) { const ox = o.x, oy = o.y; Object.assign(o, n); o.tx = n.x; o.ty = n.y; o.x = ox; o.y = oy; return o; }
+    n.tx = n.x; n.ty = n.y; return n;
+  });
+  bullets = bullets.filter(b => b.owner === 'p').concat(s.bl.map(a => ({ x: a[0], y: a[1], vx: a[2], vy: a[3], life: 0.35, owner: 'v',
+    plasma: !!(a[4] & 1), big: !!(a[4] & 2), ghost: !!(a[4] & 4), homing: !!(a[4] & 8), team: !!(a[4] & 16), strong: !!(a[4] & 32), april: !!(a[4] & 64), hitWalls: {} })));
+  const keepT = (list, id) => { const o = list.find(x => x.id === id); return o ? o.t : 0; };
+  powerups = s.pw.filter(a => !MP.reqPU.has(a[0])).map(a => ({ id: a[0], type: a[1], x: a[2], y: a[3], t: keepT(powerups, a[0]) }));
+  weaponDrops = s.wd.map(a => ({ id: a[0], type: a[1], x: a[2], y: a[3], takenBy: a[4], t: keepT(weaponDrops, a[0]) }));
+  grenadeDrops = s.gd.map(a => ({ id: a[0], x: a[1], y: a[2], takenBy: a[3], t: keepT(grenadeDrops, a[0]) }));
+  supplies = s.sp.map(a => ({ id: a[0], type: a[1], x: a[2], y: a[3], takenBy: a[4], t: keepT(supplies, a[0]) }));
+  const oldW = new Map(builtWalls.map(w => [w.i, w])); builtAt.fill(null);
+  builtWalls = s.wl.map(([i, hp, mh]) => { const o = oldW.get(i); const w = { x: (i % GW) * GS, y: ((i / GW) | 0) * GS, w: GS, h: GS, hp, maxHp: mh, i, flash: o ? (hp < o.hp ? 0.12 : o.flash) : 0 }; builtAt[i] = w; return w; });
+  meteors = s.mt;
+  grenadesFlying = grenadesFlying.filter(g => !g.remote).concat(s.gf.map(a => ({ x0: a[0], y0: a[1], tx: a[2], ty: a[3], t: a[4], dur: a[5], remote: true })));
+  MP.hostMissiles = s.ms;
+  for (const g of s.rg) rings.push(g);
+  for (const f of s.fx) burst(f[0], f[1], f[2], f[3], f[4], f[5] === null ? undefined : f[5], f[6] === null ? undefined : f[6]);
+  const oldP = new Map(others.map(o => [o.id, o]));
+  others = s.pl.filter(n => n.id !== MP.id).map(n => {
+    const o = oldP.get(n.id);
+    if (o) { const ox = o.x, oy = o.y; Object.assign(o, n); o.tx = n.x; o.ty = n.y; o.x = ox; o.y = oy; return o; }
+    n.tx = n.x; n.ty = n.y; return n;
+  });
+  if (s.hit && s.hit[0] > 0) hitPlayer(s.hit[0], !s.hit[1]);
+}
+function mpFlameFx(r) { // robotternes flammer tegnes hos klienten ud fra, hvilken vej robotten vender
+  if (Math.random() < 0.35) return;
+  const range = r.type === 'flame' ? CFG.flameRobotRange : r.type === 'ultra' ? CFG.ultraFlameRange : (r.kit && r.kit.flameRange) || CFG.flameRange;
+  const sides = r.type === 'boss' ? [-1, 1] : r.type === 'ultra' ? [-1, 0, 1] : [0];
+  for (const side of sides) {
+    const nx = r.x + Math.cos(r.angle) * (r.r + 8) + Math.cos(r.angle + Math.PI / 2) * side * r.r * 0.8;
+    const ny = r.y + Math.sin(r.angle) * (r.r + 8) + Math.sin(r.angle + Math.PI / 2) * side * r.r * 0.8;
+    for (let k = 0; k < 2; k++) {
+      const a = r.angle + side * 0.22 + rand(-0.25, 0.25), v = rand(600, 700) * range / 240, life = rand(0.45, 0.6);
+      particles.push({ x: nx, y: ny, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life, max: life, color: ['#ffdf6b', '#ff7a2a', '#ffb347', '#ff5a2a'][Math.floor(Math.random() * 4)], size: rand(10, 18), drag: 0.965, grow: true });
+    }
+  }
+}
+function mpClientUpdate(dt) {
+  time += dt;
+  matTimer += dt; if (!D.autoMats) matTimer = 0;
+  while (matTimer >= CFG.materialEvery) { matTimer -= CFG.materialEvery; if (materials < CFG.maxMaterials) materials++; }
+  for (const w of builtWalls) w.flash = Math.max(0, w.flash - dt);
+  const k = Math.min(1, dt * 14);
+  for (const r of robots) {
+    if (r.tx !== undefined) { r.x += (r.tx - r.x) * k; r.y += (r.ty - r.y) * k; }
+    r.flash = Math.max(0, (r.flash || 0) - dt);
+    if (r.flaming) mpFlameFx(r);
+  }
+  for (const o of others) if (o.tx !== undefined) { o.x += (o.tx - o.x) * k; o.y += (o.ty - o.y) * k; }
+  for (const list of [powerups, weaponDrops, grenadeDrops, supplies]) for (const o of list) o.t = (o.t || 0) + dt;
+  updatePlayer(dt);
+  mpClientPickups();
+  for (let i = grenadesFlying.length - 1; i >= 0; i--) { const g = grenadesFlying[i]; g.t += dt; if (g.t >= g.dur) { grenadesFlying.splice(i, 1); if (!g.remote) explodeGrenade(g.tx, g.ty); } }
+  buffs.damage = Math.max(0, buffs.damage - dt); buffs.reload = Math.max(0, buffs.reload - dt);
+  for (let i = popups.length - 1; i >= 0; i--) { popups[i].t += dt; popups[i].y -= 40 * dt; if (popups[i].t > 1.4) popups.splice(i, 1); }
+  updateBullets(dt); updateMissiles(dt);
+  if (bannerT > 0) bannerT -= dt;
+  mpReviveCheck(dt);
+  for (const b of bullets) if (b.owner === 'p' && !b.sent) { b.sent = true; MP.shots.push([mpR(b.x), mpR(b.y), mpR(b.vx), mpR(b.vy), Math.round(b.life * 100) / 100, b.strong ? 1 : 0, aprilMode ? 1 : 0]); }
+  MP.stT -= dt;
+  if (MP.stT <= 0) {
+    MP.stT = 1 / 20;
+    const msg = { t: 'st', s: mpMe() };
+    if (MP.dq.size) { msg.dr = [...MP.dq].map(([id, v]) => [id, Math.round(v[0] * 10) / 10, v[1]]); MP.dq.clear(); }
+    if (Object.keys(MP.burn).length) { msg.burn = MP.burn; MP.burn = {}; }
+    if (MP.shots.length) { msg.sh = MP.shots; MP.shots = []; }
+    mpSend(msg);
+  }
+}
+function mpClientPickups() {
+  const p = player; if (p.dead) return;
+  for (const pu of powerups) if (!MP.reqPU.has(pu.id) && Math.hypot(pu.x - p.x, pu.y - p.y) < p.r + 20) { MP.reqPU.add(pu.id); mpSend({ t: 'pu', id: pu.id }); }
+  powerups = powerups.filter(o => !MP.reqPU.has(o.id));
+  for (const w of weaponDrops) if (!mpTaken(w) && Math.hypot(w.x - p.x, w.y - p.y) < p.r + 24) {
+    MP.took.add(w.id); mpSend({ t: 'take', id: w.id }); giveWeapon(w.type); burst(w.x, w.y, WEAPONS[w.type].color, 30, 300); banner(WEAPONS[w.type].name + '!');
+  }
+  for (const g of grenadeDrops) if (!mpTaken(g) && Math.hypot(g.x - p.x, g.y - p.y) < p.r + 22) {
+    MP.took.add(g.id); mpSend({ t: 'take', id: g.id }); p.grenades += CFG.grenadesPerPickup; burst(g.x, g.y, '#9be36f', 20, 240);
+    popups.push({ x: p.x, y: p.y - 40, text: `+${CFG.grenadesPerPickup} granater (${TOUCH ? 'GRANAT-knappen' : 'tast F'})`, color: '#9be36f', t: 0 });
+  }
+  for (const o of supplies) if (!mpTaken(o) && Math.hypot(o.x - p.x, o.y - p.y) < p.r + 20) {
+    MP.took.add(o.id); mpSend({ t: 'take', id: o.id });
+    if (o.type === 'ammo') { p.ammo += CFG.hardAmmoPickup; popups.push({ x: p.x, y: p.y - 40, text: `+${CFG.hardAmmoPickup} skud`, color: '#f0a33a', t: 0.3 }); }
+    else { materials = Math.min(CFG.maxMaterials, materials + CFG.hardWoodPickup); popups.push({ x: p.x, y: p.y - 40, text: `+${CFG.hardWoodPickup} byggemateriale`, color: '#e6c08a', t: 0.3 }); }
+    burst(o.x, o.y, o.type === 'ammo' ? '#f0a33a' : '#c9a06a', 14, 200);
+  }
+}
+
+// ---------- Nede, genoplivning og friendly fire ----------
+function mpDown() {
+  const p = player; p.hp = 0; p.dead = true; p.flash = 0; mouse.down = false;
+  burst(p.x, p.y, '#3d8bff', 30, 300); shake = Math.max(shake, 12);
+  popups.push({ x: p.x, y: p.y - 50, text: '💀 Du er nede! En holdkammerat kan genoplive dig', color: '#ffb0a0', t: -0.6 });
+}
+function mpReviveCheck(dt) {
+  if (player.dead) { MP.revT = {}; return; }
+  for (const o of others) {
+    if (!o.dead) { delete MP.revT[o.id]; continue; }
+    if (Math.hypot(o.x - player.x, o.y - player.y) < CFG.reviveDist) {
+      MP.revT[o.id] = (MP.revT[o.id] || 0) + dt;
+      if (MP.revT[o.id] >= CFG.reviveTime) {
+        delete MP.revT[o.id]; o.dead = false; o.hp = o.maxHp * 0.5;
+        if (MP.role === 'host') mpSend({ t: 'rev', by: mpMyName() }, MP.conns.get(o.id)); else mpSend({ t: 'rev', to: o.id });
+        popups.push({ x: o.x, y: o.y - 50, text: '❤ Du genoplivede ' + (o.name || ''), color: '#7dffcf', t: 0 }); burst(o.x, o.y, '#7dffcf', 30, 280);
+      }
+    } else if (MP.revT[o.id]) MP.revT[o.id] = Math.max(0, MP.revT[o.id] - dt * 2);
+  }
+}
+function mpRevived(by) {
+  const p = player; if (!p.dead) return;
+  p.dead = false; p.hp = p.maxHp * 0.5; p.invuln = 2; p.lastHit = time;
+  burst(p.x, p.y, '#7dffcf', 36, 320); rings.push({ x: p.x, y: p.y, t: 0, small: true });
+  popups.push({ x: p.x, y: p.y - 50, text: '❤ Genoplivet af ' + (by || 'en holdkammerat') + '!', color: '#7dffcf', t: 0 });
+}
+function mpFF(o, dmg) { // dit skud ramte en holdkammerat (kun med friendly fire)
+  if (MP.role === 'host') mpSend({ t: 'ff', dmg }, MP.conns.get(o.id)); else mpSend({ t: 'ff', to: o.id, dmg });
+  o.flash = 0.12;
+}
+function mpTakeFF(dmg) {
+  const p = player; if (p.dead || p.invuln > 0 || cheats.god || state !== 'play') return;
+  p.hp -= dmg; hitPlayer(0.001); // hitPlayer klarer blink, "nede" og engle-genoplivning
+}
+function mpDrawDowned(p) {
+  ctx.save(); ctx.translate(p.x, p.y); ctx.globalAlpha = 0.75;
+  circle(0, 0, p.r); ctx.fillStyle = '#4a5260'; ctx.fill(); ctx.lineWidth = 2.5; ctx.strokeStyle = '#2a3038'; ctx.stroke();
+  ctx.strokeStyle = '#e8eaee'; ctx.lineWidth = 2.5;
+  for (const ex of [-6, 6]) { ctx.beginPath(); ctx.moveTo(ex - 3, -5); ctx.lineTo(ex + 3, 1); ctx.moveTo(ex + 3, -5); ctx.lineTo(ex - 3, 1); ctx.stroke(); }
+  ctx.globalAlpha = 0.6 + 0.4 * Math.sin(time * 5);
+  ctx.font = '800 12px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.strokeText('HJÆLP!', 0, p.r + 14); ctx.fillStyle = '#ffb0a0'; ctx.fillText('HJÆLP!', 0, p.r + 14);
+  ctx.restore();
+}
+function mpDrawOthers() {
+  if (!MP) return;
+  const me = player;
+  for (const o of others) {
+    player = o; try { drawPlayer(); } finally { player = me; }
+    ctx.font = '800 12px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.75)'; ctx.strokeText(o.name || '', o.x, o.y - o.r - 30); ctx.fillStyle = '#8fd0ff'; ctx.fillText(o.name || '', o.x, o.y - o.r - 30);
+    if (!o.dead) bar(o.x - 28, o.y - o.r - 18, 56, 6, o.hp / o.maxHp, hpColor(o.hp / o.maxHp));
+    const rt = MP.revT[o.id];
+    if (o.dead && rt > 0) {
+      ctx.lineWidth = 5; ctx.strokeStyle = '#7dffcf'; ctx.beginPath(); ctx.arc(o.x, o.y, o.r + 12, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, rt / CFG.reviveTime)); ctx.stroke();
+    }
+  }
+  for (const m of MP.hostMissiles || []) { // værtens super-missiler
+    ctx.save(); ctx.translate(m[0], m[1]); ctx.rotate(m[2]); ctx.fillStyle = '#e8eaee'; rr(-10, -4, 20, 8, 3); ctx.fill(); ctx.fillStyle = '#ffb340'; circle(-12, 0, 4); ctx.fill(); ctx.restore();
+  }
+}
+function mpHud() { // tekst øverst, når man er nede
+  if (!MP || !player.dead || state !== 'play') return;
+  ctx.font = '800 18px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const t = others.some(o => !o.dead) ? '💀 Du er nede – en holdkammerat kan genoplive dig ved at stå ved dig i 3 sekunder' : '💀 Alle er nede …';
+  ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,.75)'; ctx.strokeText(t, VW / 2, VH * 0.22); ctx.fillStyle = '#ffb0a0'; ctx.fillText(t, VW / 2, VH * 0.22);
+}
+function mpPause() { // i multiplayer kører spillet videre – menuen er kun en pause for dig selv
+  if (MP.menu) { MP.menu = false; overlay.classList.add('hidden'); return; }
+  MP.menu = true; mouse.down = false; keys.clear();
+  mpPanel(`<h1>👥 Multiplayer</h1><p>Bølge ${wave} · ${kills} robotter nedlagt</p><p class="muted">Spillet kører videre for holdet, mens menuen er åben.</p>
+    <div class="menu-btns"><button id="mpres">Fortsæt</button><button class="sec" id="mpquit">Forlad spillet</button></div>`);
+  document.getElementById('mpres').onclick = () => { MP.menu = false; overlay.classList.add('hidden'); };
+  document.getElementById('mpquit').onclick = () => { mpLeave(); menu(); };
+}
+
+// ---------- Slut og highscore ----------
+function mpBoard() { return 'mp_' + (MP ? MP.mode : 'normal'); }
+function mpEnd() {
+  MP.over = true;
+  const d = { t: 'over', wave, kills, names: Object.values(MP.names), mode: MP.mode };
+  mpSendSnaps(); mpBroadcast(d); mpGameOver(d);
+}
+function mpGameOver(d) {
+  state = 'over'; mouse.down = false; if (MP) MP.menu = false;
+  setTimeout(() => mpGameOverPanel(d), 900);
+}
+async function mpGameOverPanel(d) {
+  if (!MP) return;
+  const host = MP.role === 'host', board = 'mp_' + d.mode, team = d.names.join(' + ').slice(0, 48);
+  const head = `<h1>Holdet er slået ud</h1><p>${esc(team)}<br>Bølge <b>${d.wave}</b> · <b>${d.kills}</b> robotter nedlagt</p>`;
+  const btns = `<div class="menu-btns">${host ? '<button id="mplobby">Tilbage til lobbyen</button>' : ''}<button class="sec" id="mpquit">Forlad</button></div>${host ? '' : '<p class="muted">Værten kan starte en ny runde.</p>'}`;
+  mpPanel(head + '<p class="muted">Henter highscore …</p>' + btns);
+  const wire = () => {
+    const lb = document.getElementById('mplobby'); if (lb) lb.onclick = () => { MP.started = false; mpBroadcast({ t: 'tolobby' }); mpLobby(); };
+    document.getElementById('mpquit').onclick = () => { mpLeave(); menu(); };
+  };
+  wire();
+  let list = await Promise.race([hsLoad(board), new Promise(r => setTimeout(() => r(null), 5000))]);
+  if (!MP || state !== 'over') return;
+  let mark = null;
+  if (host && list && d.kills >= 1 && hsQualifies(list, d.kills, d.wave)) {
+    const top = await hsSubmit(team, d.kills, d.wave, board); if (top) { list = top; mark = { name: team, kills: d.kills, wave: d.wave }; }
+  }
+  if (!MP || state !== 'over') return;
+  mpPanel(head + (list ? hsTable(list, mark, board) : '<p class="muted">Highscore kunne ikke hentes.</p>') + btns); wire();
+}
+
 let last = performance.now();
 // En fejl i ét billede må ikke stoppe hele spillet: næste billede bestilles først, og fejl fanges og vises kort.
 let errShownAt = -99;
