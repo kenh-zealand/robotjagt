@@ -2278,7 +2278,7 @@ function menu() {
   panel.innerHTML = `<h1>Robotjagt</h1><p>Overlev så mange bølger af robotter som muligt. <span style="color:#93a0b0">· v${VERSION}</span></p>
     <div class="diff">${Object.entries(DIFFS).map(([k, d]) => `<button data-d="${k}" class="${k === difficulty ? 'on' : ''}" style="${k === difficulty ? 'border-color:' + d.color : ''}">${d.name}</button>`).join('')}</div>
     <div class="diff-info">${{ easy: 'Dobbelt liv, dobbelt så hurtig genladning, robotterne er halvt så stærke. Miniboss hver 5. bølge, boss hver 20., ingen ultra-boss. Mellemrum sigter automatisk.', normal: 'Det almindelige spil.', hard: 'Du er halvt så stærk, robotterne dobbelt så stærke. Ingen genladning – find skud og træ på banen. Du kan ikke gå gennem dine egne vægge.' }[difficulty]}</div>
-    <div class="menu-btns"><button id="go">Start spil</button><button class="sec" id="admstart">⚙ Admin-tilstand</button><button class="sec" id="aprilstart">🤡 Aprilsnar</button><button class="sec" id="hsnow">🏆 Highscore</button><button class="sec" id="codesnow">🔑 Koder</button><button class="sec" id="lognow">Ændringslog</button></div>${pendingSkin ? (pendingSkin === 'diamond' ? '<p class="tip" style="color:#9fefff">💎 Diamant-skin er klar til næste runde</p>' : pendingSkin === 'rainbow' ? '<p class="tip" style="color:#8fd0ff">🌈 Regnbue-skin er klar til næste runde</p>' : pendingSkin === 'flame' ? '<p class="tip" style="color:#ff8a3a">🔥 Flamme-skin er klar til næste runde</p>' : pendingSkin === 'angel' ? '<p class="tip" style="color:#fff3b0">😇 Engle-skin er klar til næste runde</p>' : pendingSkin === 'owner' ? '<p class="tip" style="color:#ffd84a">👑 Ejer-skin er klar til næste runde</p>' : '<p class="tip" style="color:#ffd84a">✨ Guld-skin er klar til næste runde</p>') : ''}
+    <div class="menu-btns"><button id="go">Start spil</button><button class="sec" id="admstart">⚙ Admin-tilstand</button><button class="sec" id="aprilstart">🤡 Aprilsnar</button><button class="sec" id="hsnow">🏆 Highscore</button>${lockerOpen() ? '<button class="sec" id="lockernow">🎽 Locker</button>' : ''}<button class="sec" id="codesnow">🔑 Koder</button><button class="sec" id="lognow">Ændringslog</button></div>${pendingSkin ? (pendingSkin === 'diamond' ? '<p class="tip" style="color:#9fefff">💎 Diamant-skin er klar til næste runde</p>' : pendingSkin === 'rainbow' ? '<p class="tip" style="color:#8fd0ff">🌈 Regnbue-skin er klar til næste runde</p>' : pendingSkin === 'flame' ? '<p class="tip" style="color:#ff8a3a">🔥 Flamme-skin er klar til næste runde</p>' : pendingSkin === 'angel' ? '<p class="tip" style="color:#fff3b0">😇 Engle-skin er klar til næste runde</p>' : pendingSkin === 'owner' ? '<p class="tip" style="color:#ffd84a">👑 Ejer-skin er klar til næste runde</p>' : '<p class="tip" style="color:#ffd84a">✨ Guld-skin er klar til næste runde</p>') : ''}
     ${portrait ? '<p class="tip">📱 Spillet er bedst, når du vender telefonen på langs.</p>' : ''}
     ${TOUCH && !canFullscreen() ? '<p class="tip">Tip: Del → "Føj til hjemmeskærm" giver fuld skærm.</p>' : ''}
     <details ${TOUCH ? '' : 'open'}><summary>Sådan spiller du</summary>
@@ -2325,13 +2325,14 @@ ${controls}
   document.getElementById('lognow').onclick = openLog;
   document.getElementById('hsnow').onclick = () => openHighscore('menu');
   document.getElementById('codesnow').onclick = openCodes;
+  const lk = document.getElementById('lockernow'); if (lk) lk.onclick = openLocker;
   panel.querySelectorAll('[data-d]').forEach(b => b.onclick = () => { difficulty = b.dataset.d; try { localStorage.setItem('robotjagt_diff', difficulty); } catch (e) {} menu(); });
 }
 // admin = true: admin-tilstand – alle har admin uden kode, men runden tæller ikke på highscore
 let aprilMode = false; // 🤡 aprilsnar: dine skud er granater – runden kommer på Aprilsnar-tavlen
 // Skade fra sværhedsgrad og skin – gælder alt: skud, flammer, super-missil og granater (og ganges med lilla sværd)
 function pDmg() { return D.playerDmg * (player.skinDmg || 1); }
-function start(admin) { D = DIFFS[difficulty]; reset(); if (!D.autoReload) player.ammo = CFG.hardStartAmmo; if (!D.autoMats) materials = CFG.startMaterials; player.skin = pendingSkin; if (player.skin === 'flame') player.skinDmg = 1.1; if (player.skin === 'angel') { player.skinDmg = 2; player.speedMul = 2; player.reloadMul = 2; player.revives = 5; } if (player.skin === 'owner') { player.rateMul = 2; player.ammoMul = 3; player.skinDmg = 6; player.speedMul = 3; player.reloadMul = 3; player.revives = 5; player.maxHp *= 6; player.hp = player.maxHp; } pendingSkin = null; adminFree = false; secretBuf = ''; for (const k in cheats) cheats[k] = false; adminMode = !!admin; usedAdmin = adminMode; state = 'play'; overlay.classList.add('hidden'); last = performance.now(); if (aprilMode) popups.push({ x: player.x, y: player.y - 70, text: '🤡 APRILSNAR – du skyder granater!', color: '#ff9de2', t: -1 }); }
+function start(admin) { D = DIFFS[difficulty]; reset(); if (!D.autoReload) player.ammo = CFG.hardStartAmmo; if (!D.autoMats) materials = CFG.startMaterials; player.skin = pendingSkin || equippedSkin(); if (player.skin) markSkin(player.skin); if (player.skin === 'owner') lsSet('robotjagt_locker', '1'); if (player.skin === 'flame') player.skinDmg = 1.1; if (player.skin === 'angel') { player.skinDmg = 2; player.speedMul = 2; player.reloadMul = 2; player.revives = 5; } if (player.skin === 'owner') { player.rateMul = 2; player.ammoMul = 3; player.skinDmg = 6; player.speedMul = 3; player.reloadMul = 3; player.revives = 5; player.maxHp *= 6; player.hp = player.maxHp; } pendingSkin = null; adminFree = false; secretBuf = ''; for (const k in cheats) cheats[k] = false; adminMode = !!admin; usedAdmin = adminMode; state = 'play'; overlay.classList.add('hidden'); last = performance.now(); if (aprilMode) popups.push({ x: player.x, y: player.y - 70, text: '🤡 APRILSNAR – du skyder granater!', color: '#ff9de2', t: -1 }); }
 function pause() {
   state = 'pause'; mouse.down = false; keys.clear();
   showPanel(`<h1>Pause</h1><p>Bølge ${wave} · ${kills} robotter nedlagt</p>`, 'Fortsæt', resume);
@@ -2493,6 +2494,25 @@ function openLog() {
 // ---------- Koder (fra startskærmen) ----------
 let pendingSkin = null; // gælder kun for næste runde
 const skinCodesUsed = new Set(); // ejer-skin: alle skin-koder skal tastes (i vilkårlig rækkefølge)
+// 🎽 Locker: åbner, når man har spillet med ejer-skinnet én gang. Viser alle skins, man har aktiveret,
+// og det skin, man tager på, bliver på i alle runder, indtil man tager et andet (gemmes på enheden).
+const SKINS = { gold: ['✨ Guld', '#ffd84a'], rainbow: ['🌈 Regnbue', '#8fd0ff'], diamond: ['💎 Diamant', '#9fefff'], flame: ['🔥 Flamme', '#ff8a3a'], angel: ['😇 Engel', '#fff3b0'], owner: ['👑 Ejer', '#ffd84a'] };
+function lsGet(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+function usedSkins() { try { const a = JSON.parse(lsGet('robotjagt_skins', '[]')); return Array.isArray(a) ? a.filter(k => SKINS[k]) : []; } catch (e) { return []; } }
+function markSkin(k) { if (!SKINS[k]) return; const a = usedSkins(); if (!a.includes(k)) { a.push(k); lsSet('robotjagt_skins', JSON.stringify(a)); } }
+function lockerOpen() { return lsGet('robotjagt_locker', '') === '1'; }
+function equippedSkin() { const k = lsGet('robotjagt_equip', ''); return lockerOpen() && SKINS[k] && usedSkins().includes(k) ? k : null; }
+function openLocker() {
+  const have = Object.keys(SKINS).filter(k => usedSkins().includes(k)), on = equippedSkin();
+  panel.innerHTML = `<h1>🎽 Locker</h1><p>Tag et skin på – det bliver på i alle runder, indtil du skifter.</p>
+    <div class="menu-btns" style="flex-wrap:wrap">${have.map(k => `<button class="${k === on ? '' : 'sec'}" data-skin="${k}" style="${k === on ? '' : 'color:' + SKINS[k][1]}">${SKINS[k][0]}${k === on ? ' ✓' : ''}</button>`).join('')}
+    <button class="${on ? 'sec' : ''}" data-skin="">Intet skin${on ? '' : ' ✓'}</button></div>
+    <div class="menu-btns"><button class="sec" id="lockerback">Tilbage</button></div>`;
+  overlay.classList.remove('hidden');
+  panel.querySelectorAll('[data-skin]').forEach(b => b.onclick = () => { lsSet('robotjagt_equip', b.dataset.skin); pendingSkin = null; openLocker(); });
+  document.getElementById('lockerback').onclick = menu;
+}
 const CODES = { 193423269: 'gold', 1715379802: 'rainbow', 916669625: 'diamond', 177609: 'flame', 1815438879: 'angel' }; // koderne gemmes kun som tal, så de ikke kan læses i koden
 function codeHash(t) { let h = 5381; for (const c of t.trim().toLowerCase()) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0; return h; }
 function openCodes() {
@@ -2511,7 +2531,8 @@ function openCodes() {
     else if (what === 'flame') { pendingSkin = 'flame'; msg.style.color = '#ff8a3a'; msg.textContent = '🔥 Flamme-skin aktiveret til næste runde!'; }
     else if (what === 'rainbow') { pendingSkin = 'rainbow'; msg.style.color = '#8fd0ff'; msg.textContent = '🌈 Regnbue-skin aktiveret til næste runde!'; }
     else { msg.style.color = ''; msg.textContent = 'Ukendt kode'; }
-    if (what) { skinCodesUsed.add(what); if (skinCodesUsed.size >= 5) { skinCodesUsed.clear(); pendingSkin = 'owner'; msg.style.color = '#ffd84a'; msg.textContent = '👑 Ejer-skin aktiveret til næste runde!'; } }
+    if (what) { markSkin(what); skinCodesUsed.add(what); if (skinCodesUsed.size >= 5) { skinCodesUsed.clear(); pendingSkin = 'owner'; msg.style.color = '#ffd84a'; msg.textContent = '👑 Ejer-skin aktiveret til næste runde!'; } }
+    if (pendingSkin) markSkin(pendingSkin);
     inp.value = ''; inp.focus();
   };
 }
