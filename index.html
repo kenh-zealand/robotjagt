@@ -53,6 +53,17 @@
   .rbw{background:linear-gradient(90deg,#ff4d4d,#ffa64d,#ffe14d,#4dff88,#4dd2ff,#7a5cff,#ff4dd8,#ff4d4d);background-size:200% auto;-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:800;animation:rbw 2s linear infinite}
   @keyframes rbw{to{background-position:200% center}}
   .gld{background:linear-gradient(90deg,#ffb300,#ffd700,#fffbe0,#ffd700,#ffb300);background-size:200% auto;-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent;font-weight:900;filter:drop-shadow(0 0 4px rgba(255,200,40,.75));animation:rbw 1.8s linear infinite}
+  .panel:has(.hsview){max-width:560px;padding:16px 20px}
+  .hsview h1{font-size:24px;margin:0}
+  .hsview .hsrow{display:flex;align-items:center;gap:5px;justify-content:center;flex-wrap:wrap;margin:6px 0 0}
+  .hsview .hsrow span{font-size:11px;color:#93a0b0;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-right:2px}
+  .hsview .hsrow button{margin:0;padding:4px 10px;font-size:13px;border-radius:8px;background:#232b35;color:#c9d3df;border:2px solid transparent}
+  .hsview .hsrow button.on{background:#2c3644;color:#fff}
+  .hsview .muted{margin:6px 0 0;font-size:12px}
+  .hsview .hs-h{margin:6px 0 0}
+  .hsview table.hs{margin:4px 0;font-size:14px}
+  .hsview table.hs td{padding:4px 6px}
+  .hsview #hsback{margin-top:6px;padding:9px 26px}
   .hs-h{font-weight:800;font-size:15px;text-align:left;margin:12px 0 0;color:#ffd84a}
   @media (max-height:500px){.stats{margin:8px 0 2px}.stat{padding:6px 12px}.stat .n{font-size:20px}table.hs{font-size:13px;margin:4px 0}table.hs td{padding:3px 6px}.panel h1{margin-bottom:0}}
   @media (max-width:600px),(max-height:500px){.panel{padding:18px 18px}.panel h1{font-size:26px}.panel ul{font-size:14px}}
@@ -83,6 +94,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.60', d: '13-11-2026', items: ['Highscore-tavlen passer nu til skærmen, så man kan se hele top 10 uden at scrolle – også efter en runde og på telefon', 'Tavlerne er delt i to rækker: Alene og 👥 Hold'] },
   { v: '1.59', d: '13-11-2026', items: ['Admin kan bruges i multiplayer – vælg om det skal ske for dig, en bestemt holdkammerat eller hele holdet', 'Robotter og bølger fra admin gælder hele holdet, og spillet kører videre, mens panelet er åbent', 'Multiplayer-runder med admin kommer ikke på highscore'] },
   { v: '1.58', d: '13-11-2026', items: ['👥 Multiplayer: spil sammen på hold med op til 3 spillere – den ene laver en kode, de andre skriver den', 'Friendly fire kan slås til og fra i lobbyen (gør en fjerdedel skade)', 'Er man nede, kan en holdkammerat genoplive en ved at stå ved en i 3 sekunder – spillet slutter, når hele holdet er nede', 'Våben, granater og kasser forsvinder kun for den, der tager dem – buffs får hele holdet', 'Egne multiplayer-highscore-tavler for Let, Normal, Svær og Aprilsnar'] },
   { v: '1.57', d: '13-11-2026', items: ['Flammerne fra minibossen, bossen og ultra-bossen er dobbelt så store, så de passer til, hvor langt de rækker'] },
@@ -2491,14 +2503,27 @@ function hsTable(list, mark, m) {
 }
 const hsWhere = () => HS_SHARED ? 'Fælles tavle for alle på keha.dk' : 'Kun denne enhed – den fælles tavle er på <a href="https://keha.dk/robotjagt/" target="_blank" rel="noopener" style="color:#8fd0ff">keha.dk/robotjagt</a>';
 
+// Highscore: skrumper hele tavlen, så den altid kan ses uden at scrolle (fx på telefon på langs)
+function fitPanel() {
+  const v = panel.querySelector('.hsview'); if (!v) return;
+  v.style.zoom = 1;
+  const need = v.scrollHeight, room = innerHeight - 48 - 34; // 48 = panelets afstand til kanten, 34 = indvendig luft
+  const z = Math.min(1, Math.max(0.45, room / need));
+  v.style.zoom = z < 0.999 ? z.toFixed(3) : 1;
+}
+addEventListener('resize', () => { if (panel.querySelector('.hsview')) fitPanel(); });
 async function openHighscore(from, mode) {
   const back = from || 'menu', m = mode || difficulty;
   state = state === 'play' ? 'pause' : state;
-  const tabs = `<div class="diff">${Object.entries(BOARDS).map(([k, d]) => `<button data-hm="${k}" class="${k === m ? 'on' : ''}" style="${k === m ? 'border-color:' + d.color : ''}">${d.name}</button>`).join('')}</div>`;
-  panel.innerHTML = `<h1>🏆 Highscore</h1>${tabs}<p class="muted">Henter…</p>`;
-  overlay.classList.remove('hidden');
+  const tab = ([k, d]) => `<button data-hm="${k}" class="${k === m ? 'on' : ''}" style="${k === m ? 'border-color:' + d.color : ''}">${d.name.replace('👥 ', '')}</button>`;
+  const all = Object.entries(BOARDS);
+  const tabs = `<div class="hsrow"><span>Alene</span>${all.filter(([k]) => !k.startsWith('mp_')).map(tab).join('')}</div>
+    <div class="hsrow"><span>👥 Hold</span>${all.filter(([k]) => k.startsWith('mp_')).map(tab).join('')}</div>`;
+  panel.innerHTML = `<div class="hsview"><h1>🏆 Highscore</h1>${tabs}<p class="muted">Henter…</p></div>`;
+  overlay.classList.remove('hidden'); fitPanel();
   const list = await hsLoad(m);
-  panel.innerHTML = `<h1>🏆 Highscore</h1>${tabs}<p class="muted">${hsWhere()}</p>${hsTable(list, null, m)}<button id="hsback">Tilbage</button>`;
+  panel.innerHTML = `<div class="hsview"><h1>🏆 Highscore</h1>${tabs}<p class="muted">${hsWhere()}</p>${hsTable(list, null, m)}<button id="hsback">Tilbage</button></div>`;
+  fitPanel();
   panel.querySelectorAll('[data-hm]').forEach(b => b.onclick = () => openHighscore(back, b.dataset.hm));
   document.getElementById('hsback').onclick = () => back === 'over' ? gameOverPanel() : back === 'pause' ? pause() : menu();
 }
@@ -2533,7 +2558,7 @@ async function gameOverPanel() {
       <form class="hs-form" id="hsf"><input id="hsname" maxlength="16" autocomplete="off" placeholder="Dit navn" value="${esc(saved)}"><button type="submit">Gem</button></form>
       <div class="err" id="hserr"></div>${hsTable(list, null, board)}`;
   } else mid = `<p class="muted">${hsWhere()} – ${k < 1 ? 'du skal nedlægge mindst én robot for at komme på' : 'du skal slå nr. 10 for at komme på'}.</p>` + hsTable(list, null, board);
-  panel.innerHTML = head + adminNote + mid + btns; wire();
+  panel.innerHTML = '<div class="hsview">' + head + adminNote + mid + btns + '</div>'; wire(); fitPanel();
   const f = document.getElementById('hsf');
   if (f) {
     const inp = document.getElementById('hsname'); if (!TOUCH) setTimeout(() => inp.focus(), 50);
@@ -2545,7 +2570,7 @@ async function gameOverPanel() {
       f.querySelector('button').disabled = true;
       try {
         const top = await hsSubmit(name, k, w, board);
-        panel.innerHTML = head + `<p><b>Gemt!</b> <span class="muted">${hsWhere()}</span></p>` + hsTable(top, { name, kills: k, wave: w }, board) + btns; wire();
+        panel.innerHTML = '<div class="hsview">' + head + `<p><b>Gemt!</b> <span class="muted">${hsWhere()}</span></p>` + hsTable(top, { name, kills: k, wave: w }, board) + btns + '</div>'; wire(); fitPanel();
       } catch (er) {
         f.querySelector('button').disabled = false;
         document.getElementById('hserr').textContent = er.message || 'Kunne ikke gemme – prøv igen';
@@ -3283,7 +3308,7 @@ async function mpGameOverPanel(d) {
     const top = await hsSubmit(team, d.kills, d.wave, board); if (top) { list = top; mark = { name: team, kills: d.kills, wave: d.wave }; }
   }
   if (!MP || state !== 'over') return;
-  mpPanel(head + (list ? hsTable(list, mark, board) : '<p class="muted">Highscore kunne ikke hentes.</p>') + btns); wire();
+  mpPanel('<div class="hsview">' + head + (list ? hsTable(list, mark, board) : '<p class="muted">Highscore kunne ikke hentes.</p>') + btns + '</div>'); wire(); fitPanel();
 }
 
 let last = performance.now();
