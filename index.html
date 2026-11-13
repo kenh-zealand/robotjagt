@@ -83,6 +83,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.59', d: '13-11-2026', items: ['Admin kan bruges i multiplayer – vælg om det skal ske for dig, en bestemt holdkammerat eller hele holdet', 'Robotter og bølger fra admin gælder hele holdet, og spillet kører videre, mens panelet er åbent', 'Multiplayer-runder med admin kommer ikke på highscore'] },
   { v: '1.58', d: '13-11-2026', items: ['👥 Multiplayer: spil sammen på hold med op til 3 spillere – den ene laver en kode, de andre skriver den', 'Friendly fire kan slås til og fra i lobbyen (gør en fjerdedel skade)', 'Er man nede, kan en holdkammerat genoplive en ved at stå ved en i 3 sekunder – spillet slutter, når hele holdet er nede', 'Våben, granater og kasser forsvinder kun for den, der tager dem – buffs får hele holdet', 'Egne multiplayer-highscore-tavler for Let, Normal, Svær og Aprilsnar'] },
   { v: '1.57', d: '13-11-2026', items: ['Flammerne fra minibossen, bossen og ultra-bossen er dobbelt så store, så de passer til, hvor langt de rækker'] },
   { v: '1.56', d: '12-11-2026', items: ['🤡 Ny spiltilstand: Aprilsnar – alle dine skud er granater, lige så stærke som rigtige granater. Den har sin egen highscore-tavle'] },
@@ -797,14 +798,15 @@ const TOUCH = (window.matchMedia && matchMedia('(pointer: coarse)').matches) || 
 let isTouch = TOUCH;
 
 addEventListener('keydown', e => {
-  if (state === 'admin' && !(e.target && e.target.tagName === 'INPUT') && e.key && e.key.length === 1) {
+  const inAdmin = state === 'admin' || !!(MP && MP.admin);
+  if (inAdmin && !(e.target && e.target.tagName === 'INPUT') && e.key && e.key.length === 1) {
     const nowMs = performance.now(), quiet = nowMs - lastAdminKeyAt > 600; lastAdminKeyAt = nowMs;
     if (!adminMode && adminUnlocked) secretKey(e.key);
     // E lukker admin-panelet – men kun hvis man ikke lige har tastet andre bogstaver (så man kan skrive ord med e)
     if (e.code === 'KeyE' && !e.repeat && quiet) { closeAdmin(); return; }
     return;
   }
-  if (state === 'admin' && !adminMode && adminUnlocked && e.key && e.key.length === 1) secretKey(e.key);
+  if (inAdmin && !adminMode && adminUnlocked && e.key && e.key.length === 1) secretKey(e.key);
   if (e.target && e.target.tagName === 'INPUT') return;
   if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) e.preventDefault();
   if ((e.code === 'KeyP' || e.code === 'Escape') && !e.repeat) { if (state === 'play') pause(); else if (state === 'pause') resume(); return; }
@@ -1399,6 +1401,7 @@ function update(dt) {
 function updatePlayer(dt) {
   const p = player;
   if (p.dead) { p.flash = 0; return; } // multiplayer: nede
+  if (MP && MP.menu) { keys.clear(); mouse.down = false; } // multiplayer: menu åben – figuren står stille
   if (!adminFree && Object.values(cheats).some(Boolean)) usedAdmin = true; // sikkerhedsnet: snyd slået til = admin-runde
   let mx = 0, my = 0;
   if (keys.has('KeyA') || keys.has('ArrowLeft')) mx--;
@@ -2626,7 +2629,10 @@ function secretKey(k) {
 }
 function codeOk(t) { let h = 5381; for (const c of t.trim().toLowerCase()) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0; return h === 3087473219; }
 function openAdmin() {
-  if (MP) return; // ingen admin i multiplayer
+  if (MP) { // multiplayer: spillet kører videre for holdet, mens panelet er åbent
+    lastAdminKeyAt = performance.now(); MP.admin = true; MP.menu = true; mouse.down = false; keys.clear();
+    overlay.classList.remove('hidden'); if (adminUnlocked) adminControls(); else adminLogin(); return;
+  }
   lastAdminKeyAt = performance.now(); // den E, der åbnede panelet, skal ikke straks lukke det igen
   if (state === 'play' || state === 'pause') adminFrom = state;
   state = 'admin'; mouse.down = false; keys.clear();
@@ -2634,6 +2640,7 @@ function openAdmin() {
   if (adminMode || adminUnlocked) { if (!adminFree) usedAdmin = true; adminControls(); } else adminLogin();
 }
 function closeAdmin() {
+  if (MP) { MP.admin = false; MP.menu = false; overlay.classList.add('hidden'); return; }
   if (adminFrom === 'pause') pause();
   else { state = 'play'; overlay.classList.add('hidden'); last = performance.now(); }
 }
@@ -2652,7 +2659,13 @@ function adminLogin() {
 }
 function adminToast(t) { const el = document.getElementById('admmsg'); if (el) el.textContent = t; }
 function adminControls() {
-  panel.innerHTML = `<h1>⚙ Admin${adminFree ? ' <span id="admok" style="color:#6fe39a;font-size:20px">✓</span>' : ''}</h1>
+  const tg = MP ? (MP.admTarget = MP.admTarget && (MP.admTarget === 'me' || MP.admTarget === 'all' || MP.names[MP.admTarget]) ? MP.admTarget : 'me') : 'me';
+  const pick = MP ? `<div class="adm-h">Hvem skal det ske for?</div><div class="admin-grid">
+      <button data-tg="me" class="${tg === 'me' ? 'on' : ''}">Mig</button>
+      ${Object.entries(MP.names).filter(([k]) => k !== MP.id).map(([k, n]) => `<button data-tg="${k}" class="${tg === k ? 'on' : ''}">${esc(n)}</button>`).join('')}
+      <button data-tg="all" class="${tg === 'all' ? 'on' : ''}">Hele holdet</button></div>
+      <p class="muted" style="margin:4px 0 0">Gælder Snyd, Våben og Powerups. Robotter og bølger gælder altid hele holdet.</p>` : '';
+  panel.innerHTML = `<h1>⚙ Admin${adminFree ? ' <span id="admok" style="color:#6fe39a;font-size:20px">✓</span>' : ''}</h1>${pick}
     <div class="adm-h">Snyd</div>
     <div class="admin-grid">
       <button data-a="god" class="${cheats.god ? 'on' : ''}">Udødelig: ${cheats.god ? 'TIL' : 'FRA'}</button>
@@ -2702,27 +2715,49 @@ function adminControls() {
       <button data-a="p-permrate">» Turkis lyn</button>
     </div>
     <div class="err" id="admmsg" style="color:#6fe39a"></div>
-    <button id="admclose">Tilbage til spillet</button>${adminMode ? ' <button id="admnormal" class="sec">▶ Normal (ny runde)</button>' : ' <button id="admlogout" class="sec">🔒 Log ud</button>'}`;
+    <button id="admclose">Tilbage til spillet</button>${MP ? '' : adminMode ? ' <button id="admnormal" class="sec">▶ Normal (ny runde)</button>' : ' <button id="admlogout" class="sec">🔒 Log ud</button>'}${MP ? ' <button id="admlogout" class="sec">🔒 Log ud</button>' : ''}`;
   document.getElementById('admclose').onclick = closeAdmin;
   const lo = document.getElementById('admlogout'); if (lo) lo.onclick = () => { adminUnlocked = false; closeAdmin(); };
   const an = document.getElementById('admnormal'); if (an) an.onclick = () => { if (TOUCH) goFullscreen(); start(false); };
   panel.querySelectorAll('[data-a]').forEach(b => b.onclick = () => adminAction(b.dataset.a));
+  panel.querySelectorAll('[data-tg]').forEach(b => b.onclick = () => { MP.admTarget = b.dataset.tg; adminControls(); });
 }
-function adminAction(a) {
+const ADM_WORLD = new Set(['killall', 'next', 'gowave', 'boss', 'mini', 'ultra', 'setkills', 'w-drop']); // gælder hele holdet – udføres af værten
+function mpAdminRoute(a) { // multiplayer: true = handlingen er sendt videre og skal ikke udføres her
+  const val = id => { const el = document.getElementById(id); return el ? el.value : undefined; };
+  const opt = { n: val('admcount'), v: a === 'setkills' ? val('admkills') : a === 'gowave' ? val('admwave') : undefined, by: mpMyName() };
+  if (MP.role === 'host') MP.adminUsed = true; else mpSend({ t: 'admused' });
+  if (ADM_WORLD.has(a)) { if (MP.role === 'host') return false; mpSend({ t: 'admw', a, ...opt }); adminToast('Sendt til værten'); return true; }
+  const tg = MP.admTarget || 'me'; if (tg === 'me') return false;
+  if (MP.role === 'host') { if (tg === 'all') mpBroadcast({ t: 'adm', a, ...opt }); else mpSend({ t: 'adm', a, ...opt }, MP.conns.get(tg)); }
+  else mpSend({ t: 'adm', to: tg, a, ...opt });
+  adminToast(tg === 'all' ? 'Givet til hele holdet' : 'Givet til ' + (MP.names[tg] || ''));
+  return tg !== 'all'; // "hele holdet" gælder også dig selv
+}
+function mpAdminRemote(a, opt) { // en anden har brugt admin på dig
+  adminAction(a, { ...opt, remote: true });
+  const lbl = { god: 'udødelig til/fra', ammo: 'uendelige skud til/fra', aimbot: 'aimbot til/fra', range: 'uendelig rækkevidde til/fra', wallhack: 'wallhack til/fra', heal: 'fuldt liv', super: 'super', mats: '+20 byggemateriale', nades: '+3 granater', maxhp: '+500 max liv', maxammo: '+1 skud', permdmg: '+25 % skade', permrate: '+25 % skudhastighed' }[a]
+    || (a.startsWith('w-') ? WEAPONS[a.slice(2)].name : a.startsWith('p-') ? POWER[a.slice(2)].name.replace('!', '') : a);
+  popups.push({ x: player.x, y: player.y - 60, text: '⚙ ' + (opt.by || 'Admin') + ' gav dig: ' + lbl, color: '#ffd84a', t: 0 });
+}
+function adminAction(a, opt) {
+  if (MP && !(opt && opt.remote) && mpAdminRoute(a)) return;
+  const redraw = () => (opt && opt.remote ? null : adminControls());
+  const num = (id, o) => (opt && opt[o] !== undefined ? opt[o] : document.getElementById(id) ? document.getElementById(id).value : 1);
   const p = player;
   const hm = (1 + CFG.hpPerWave * (Math.max(1, wave) - 1)) * D.robotHp;
-  if (a === 'god') { cheats.god = !cheats.god; return adminControls(); }
-  if (a === 'ammo') { cheats.ammo = !cheats.ammo; return adminControls(); }
-  if (a === 'aimbot') { cheats.aimbot = !cheats.aimbot; return adminControls(); }
-  if (a === 'range') { cheats.range = !cheats.range; return adminControls(); }
-  if (a === 'wallhack') { cheats.wallhack = !cheats.wallhack; return adminControls(); }
+  if (a === 'god') { cheats.god = !cheats.god; return redraw(); }
+  if (a === 'ammo') { cheats.ammo = !cheats.ammo; return redraw(); }
+  if (a === 'aimbot') { cheats.aimbot = !cheats.aimbot; return redraw(); }
+  if (a === 'range') { cheats.range = !cheats.range; return redraw(); }
+  if (a === 'wallhack') { cheats.wallhack = !cheats.wallhack; return redraw(); }
   if (a.startsWith('w-')) {
     const t = a.slice(2);
     if (t === 'drop') { spawnWeaponDrop(); adminToast('Et våben er lagt på banen'); }
     else { giveWeapon(t); adminToast('Du har nu: ' + WEAPONS[t].name + ' (plads ' + (p.inventory.indexOf(t) + 1) + ')'); }
   }
   if (a === 'nades') { p.grenades += 3; adminToast('Granater: ' + p.grenades); }
-  if (a === 'setkills') { kills = clamp(parseInt(document.getElementById('admkills').value, 10) || 0, 0, 999999); adminToast('Nedlagt: ' + kills); }
+  if (a === 'setkills') { kills = clamp(parseInt(num('admkills', 'v'), 10) || 0, 0, 999999); adminToast('Nedlagt: ' + kills); }
   if (a === 'mats') { materials += 20; adminToast('Byggemateriale: ' + materials); }
   if (a === 'heal') { p.hp = p.maxHp; adminToast('Liv fyldt op'); }
   if (a === 'super') { superCharge = CFG.superHits; adminToast('Super er klar'); }
@@ -2733,7 +2768,7 @@ function adminAction(a) {
   if (a === 'killall') { for (const r of robots) burst(r.x, r.y, '#ff9d3b', 20, 300); kills += robots.length; robots.length = 0; bullets = bullets.filter(b => b.owner === 'p'); waveTimer = 2.5; adminToast('Alle robotter er væk'); }
   if (a === 'next') { robots.length = 0; bullets.length = 0; waveTimer = 0.3; adminToast('Næste bølge kommer'); }
   if (a === 'gowave') {
-    const n = clamp(parseInt(document.getElementById('admwave').value, 10) || 1, 1, 999);
+    const n = clamp(parseInt(num('admwave', 'v'), 10) || 1, 1, 999);
     robots.length = 0; bullets.length = 0; wave = n - 1; waveTimer = 0.3; adminToast('Bølge ' + n + ' starter, når du går tilbage');
   }
   if (a === 'boss') { const w = wave; if (w < 1) wave = 1; spawnBoss(hm); robots[robots.length - 1].kit = bossKit(Math.max(CFG.bossEvery, wave)); wave = w; adminToast('Boss lavet'); }
@@ -2741,8 +2776,8 @@ function adminAction(a) {
   if (a === 'mini') { const w = wave; if (w < 1) wave = 1; spawnMini(hm); wave = w; adminToast('Miniboss lavet'); }
   if (a.startsWith('p-')) {
     const t = a.slice(2);
-    const n = clamp(parseInt(document.getElementById('admcount').value, 10) || 1, 1, 50);
-    adminCount = n; document.getElementById('admcount').value = n;
+    const n = clamp(parseInt(num('admcount', 'n'), 10) || 1, 1, 50);
+    if (!(opt && opt.remote)) { adminCount = n; const ac = document.getElementById('admcount'); if (ac) ac.value = n; }
     for (let i = 0; i < n; i++) applyPowerup(t, true);
     const status = { heal: `Liv: ${Math.ceil(p.hp)} / ${p.maxHp}`, damage: `Dobbelt skade: ${buffs.damage.toFixed(0)} s`,
       reload: `Hurtig genladning: ${buffs.reload.toFixed(0)} s`, super: 'Super er klar', maxhp: `Max liv: ${p.maxHp}`,
@@ -2889,7 +2924,7 @@ function mpStartGame(slot) {
   if (TOUCH) goFullscreen();
   start(false);
   player.x += slot * 60; player.y += slot * 30;
-  others = []; MP.revT = {}; MP.took = new Set(); MP.reqPU = new Set(); MP.dq = new Map(); MP.burn = {}; MP.shots = []; MP.slow = new Set(); MP.snapT = 0; MP.stT = 0; MP.over = false; mpFx = [];
+  others = []; MP.revT = {}; MP.took = new Set(); MP.reqPU = new Set(); MP.dq = new Map(); MP.burn = {}; MP.shots = []; MP.slow = new Set(); MP.adminUsed = false; MP.admin = false; MP.menu = false; MP.snapT = 0; MP.stT = 0; MP.over = false; mpFx = [];
   if (MP.role === 'host') { MP.players = new Map(); }
   popups.push({ x: player.x, y: player.y - 90, text: '👥 Multiplayer – ' + Object.values(MP.names).join(', '), color: '#8fd0ff', t: -1.2 });
 }
@@ -2938,6 +2973,7 @@ function mpClientMsg(d) {
   else if (d.t === 'buff') mpBuffFx(d.type, d.x, d.y, d.by);
   else if (d.t === 'rev') mpRevived(d.by);
   else if (d.t === 'ff') mpTakeFF(d.dmg);
+  else if (d.t === 'adm') mpAdminRemote(d.a, d);
   else if (d.t === 'over') mpGameOver(d);
 }
 
@@ -2969,6 +3005,15 @@ function mpHostMsg(id, d) {
   if (d.t === 'build') { mpBuildAt(d.x, d.y); return; }
   if (d.t === 'ff') { if (d.to === 'host') mpTakeFF(d.dmg); else mpSend({ t: 'ff', dmg: d.dmg }, MP.conns.get(d.to)); return; }
   if (d.t === 'rev') { if (d.to === 'host') mpRevived(MP.names[id]); else mpSend({ t: 'rev', by: MP.names[id] }, MP.conns.get(d.to)); return; }
+  if (d.t === 'admused') { MP.adminUsed = true; return; }
+  if (d.t === 'admw') { if (ADM_WORLD.has(d.a)) { MP.adminUsed = true; adminAction(d.a, { remote: true, n: d.n, v: d.v }); popups.push({ x: player.x, y: player.y - 60, text: '⚙ ' + MP.names[id] + ' brugte admin', color: '#ffd84a', t: 0 }); } return; }
+  if (d.t === 'adm') {
+    MP.adminUsed = true; const msg = { t: 'adm', a: d.a, n: d.n, v: d.v, by: MP.names[id] };
+    if (d.to === 'host') mpAdminRemote(d.a, msg);
+    else if (d.to === 'all') { mpAdminRemote(d.a, msg); for (const [cid, c] of MP.conns) if (cid !== id) mpSend(msg, c); }
+    else mpSend(msg, MP.conns.get(d.to));
+    return;
+  }
   if (d.t === 'fx') { mpFxFrom = id; try { mpBoomFx(d.k, d.x, d.y); } finally { mpFxFrom = ''; } }
 }
 function mpBuildAt(x, y) { // en holdkammerat har bygget en væg (materialet er allerede brugt hos dem)
@@ -3201,7 +3246,7 @@ function mpHud() { // tekst øverst, når man er nede
   ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,.75)'; ctx.strokeText(t, VW / 2, VH * 0.22); ctx.fillStyle = '#ffb0a0'; ctx.fillText(t, VW / 2, VH * 0.22);
 }
 function mpPause() { // i multiplayer kører spillet videre – menuen er kun en pause for dig selv
-  if (MP.menu) { MP.menu = false; overlay.classList.add('hidden'); return; }
+  if (MP.menu) { MP.menu = false; MP.admin = false; overlay.classList.add('hidden'); return; }
   MP.menu = true; mouse.down = false; keys.clear();
   mpPanel(`<h1>👥 Multiplayer</h1><p>Bølge ${wave} · ${kills} robotter nedlagt</p><p class="muted">Spillet kører videre for holdet, mens menuen er åben.</p>
     <div class="menu-btns"><button id="mpres">Fortsæt</button><button class="sec" id="mpquit">Forlad spillet</button></div>`);
@@ -3213,7 +3258,7 @@ function mpPause() { // i multiplayer kører spillet videre – menuen er kun en
 function mpBoard() { return 'mp_' + (MP ? MP.mode : 'normal'); }
 function mpEnd() {
   MP.over = true;
-  const d = { t: 'over', wave, kills, names: Object.values(MP.names), mode: MP.mode };
+  const d = { t: 'over', wave, kills, names: Object.values(MP.names), mode: MP.mode, admin: !!MP.adminUsed };
   mpSendSnaps(); mpBroadcast(d); mpGameOver(d);
 }
 function mpGameOver(d) {
@@ -3223,7 +3268,7 @@ function mpGameOver(d) {
 async function mpGameOverPanel(d) {
   if (!MP) return;
   const host = MP.role === 'host', board = 'mp_' + d.mode, team = d.names.join(' + ').slice(0, 48);
-  const head = `<h1>Holdet er slået ud</h1><p>${esc(team)}<br>Bølge <b>${d.wave}</b> · <b>${d.kills}</b> robotter nedlagt</p>`;
+  const head = `<h1>Holdet er slået ud</h1><p>${esc(team)}<br>Bølge <b>${d.wave}</b> · <b>${d.kills}</b> robotter nedlagt</p>${d.admin ? '<p class="muted">⚙ Der blev brugt admin, så runden kommer ikke på highscore.</p>' : ''}`;
   const btns = `<div class="menu-btns">${host ? '<button id="mplobby">Tilbage til lobbyen</button>' : ''}<button class="sec" id="mpquit">Forlad</button></div>${host ? '' : '<p class="muted">Værten kan starte en ny runde.</p>'}`;
   mpPanel(head + '<p class="muted">Henter highscore …</p>' + btns);
   const wire = () => {
@@ -3234,7 +3279,7 @@ async function mpGameOverPanel(d) {
   let list = await Promise.race([hsLoad(board), new Promise(r => setTimeout(() => r(null), 5000))]);
   if (!MP || state !== 'over') return;
   let mark = null;
-  if (host && list && d.kills >= 1 && hsQualifies(list, d.kills, d.wave)) {
+  if (host && list && !d.admin && d.kills >= 1 && hsQualifies(list, d.kills, d.wave)) {
     const top = await hsSubmit(team, d.kills, d.wave, board); if (top) { list = top; mark = { name: team, kills: d.kills, wave: d.wave }; }
   }
   if (!MP || state !== 'over') return;
