@@ -1947,6 +1947,18 @@ function drawPlayer() {
   ctx.save(); ctx.translate(p.x, p.y);
   ctx.globalAlpha = p.hidden ? (p.reveal > 0 ? 0.9 : 0.6) : 1;
   ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(3, 7, p.r, p.r * 0.7, 0, 0, Math.PI * 2); ctx.fill();
+  if (p.skin === 'owner') { // ejer: roterende guldstråler og kongelig lilla glød
+    ctx.save(); ctx.rotate(-p.angle + time * 0.8); ctx.globalCompositeOperation = 'lighter';
+    for (let k = 0; k < 12; k++) {
+      const len = p.r + 14 + 6 * Math.sin(time * 5 + k * 1.3);
+      ctx.rotate(Math.PI / 6); ctx.beginPath(); ctx.moveTo(-3, 0); ctx.lineTo(0, -len); ctx.lineTo(3, 0); ctx.closePath();
+      ctx.fillStyle = k % 2 ? 'rgba(255,216,74,.55)' : 'rgba(180,110,255,.45)'; ctx.fill();
+    }
+    ctx.restore();
+    for (let k = 0; k < 3; k++) { const a = time * 2.4 + k * Math.PI * 2 / 3; // små guldstjerner der kredser
+      ctx.fillStyle = '#ffe680'; ctx.shadowColor = '#ffd84a'; ctx.shadowBlur = 10; circle(Math.cos(a) * (p.r + 12), Math.sin(a) * (p.r + 12), 2.5); ctx.fill(); ctx.shadowBlur = 0; }
+    if (p.invuln > 0) { ctx.strokeStyle = `rgba(255,216,74,${0.5 + 0.4 * Math.sin(time * 20)})`; ctx.lineWidth = 3; circle(0, 0, p.r + 9); ctx.stroke(); }
+  }
   if (p.skin === 'angel') { // engle-vinger: flagrer, glorie og et blødt lys
     const flap = Math.sin(time * 7) * 0.25;
     ctx.save(); ctx.shadowColor = 'rgba(255,245,200,.9)'; ctx.shadowBlur = 18;
@@ -2004,6 +2016,10 @@ function drawPlayer() {
     const sx = Math.cos(sa) * p.r * 0.55, sy = Math.sin(sa) * p.r * 0.55;
     ctx.beginPath(); ctx.moveTo(sx, sy - 6); ctx.lineTo(sx + 2, sy - 2); ctx.lineTo(sx + 6, sy); ctx.lineTo(sx + 2, sy + 2); ctx.lineTo(sx, sy + 6); ctx.lineTo(sx - 2, sy + 2); ctx.lineTo(sx - 6, sy); ctx.lineTo(sx - 2, sy - 2); ctx.closePath(); ctx.fill();
     ctx.globalAlpha = 1;
+  } else if (p.skin === 'owner' && p.flash <= 0) { // ejer: dyb lilla krop med guldkant
+    const g = ctx.createRadialGradient(-4, -4, 1, 0, 0, p.r);
+    g.addColorStop(0, '#d9a8ff'); g.addColorStop(0.5, '#7a2fd0'); g.addColorStop(1, '#3a0f6e');
+    circle(0, 0, p.r); ctx.fillStyle = g; ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = '#ffd84a'; ctx.stroke();
   } else if (p.skin === 'angel' && p.flash <= 0) { // engel: lysende hvid krop
     const g = ctx.createRadialGradient(-4, -4, 1, 0, 0, p.r);
     g.addColorStop(0, '#ffffff'); g.addColorStop(0.6, '#fbf6e4'); g.addColorStop(1, '#e8d9a8');
@@ -2041,6 +2057,14 @@ function drawPlayer() {
   }
   if (gold) { ctx.strokeStyle = 'rgba(255,248,200,' + (0.4 + 0.3 * Math.sin(time * 5)) + ')'; ctx.lineWidth = 2; circle(0, 0, p.r + 4); ctx.stroke(); }
   circle(-4, -4, p.r * 0.4); ctx.fillStyle = 'rgba(255,255,255,.25)'; ctx.fill();
+  if (p.skin === 'owner') { // guldkrone med juveler, altid øverst
+    ctx.save(); ctx.rotate(-p.angle); ctx.translate(0, -p.r - 4 + Math.sin(time * 3) * 1.5);
+    ctx.shadowColor = '#ffd84a'; ctx.shadowBlur = 12; ctx.fillStyle = '#ffd84a'; ctx.strokeStyle = '#a8740a'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(-13, 4); ctx.lineTo(-13, -6); ctx.lineTo(-7, 0); ctx.lineTo(0, -10); ctx.lineTo(7, 0); ctx.lineTo(13, -6); ctx.lineTo(13, 4); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.shadowBlur = 0;
+    for (const [jx, jy, jc] of [[-13, -6, '#ff4a6a'], [0, -10, '#4ad6ff'], [13, -6, '#ff4a6a'], [0, 0, '#6aff9a']]) { ctx.fillStyle = jc; circle(jx, jy, 2.2); ctx.fill(); }
+    ctx.restore();
+  }
   if (p.skin === 'angel') { // glorie der svæver over hovedet og altid sidder øverst
     ctx.save(); ctx.rotate(-p.angle); ctx.translate(0, -p.r - 6 + Math.sin(time * 3) * 2);
     ctx.shadowColor = '#ffe27a'; ctx.shadowBlur = 14; ctx.lineWidth = 3.5; ctx.strokeStyle = '#ffd94a';
@@ -2252,7 +2276,7 @@ function menu() {
   panel.innerHTML = `<h1>Robotjagt</h1><p>Overlev så mange bølger af robotter som muligt. <span style="color:#93a0b0">· v${VERSION}</span></p>
     <div class="diff">${Object.entries(DIFFS).map(([k, d]) => `<button data-d="${k}" class="${k === difficulty ? 'on' : ''}" style="${k === difficulty ? 'border-color:' + d.color : ''}">${d.name}</button>`).join('')}</div>
     <div class="diff-info">${{ easy: 'Dobbelt liv, dobbelt så hurtig genladning, robotterne er halvt så stærke. Miniboss hver 5. bølge, boss hver 20., ingen ultra-boss. Mellemrum sigter automatisk.', normal: 'Det almindelige spil.', hard: 'Du er halvt så stærk, robotterne dobbelt så stærke. Ingen genladning – find skud og træ på banen. Du kan ikke gå gennem dine egne vægge.' }[difficulty]}</div>
-    <div class="menu-btns"><button id="go">Start spil</button><button class="sec" id="admstart">⚙ Admin-tilstand</button><button class="sec" id="aprilstart">🤡 Aprilsnar</button><button class="sec" id="hsnow">🏆 Highscore</button><button class="sec" id="codesnow">🔑 Koder</button><button class="sec" id="lognow">Ændringslog</button></div>${pendingSkin ? (pendingSkin === 'diamond' ? '<p class="tip" style="color:#9fefff">💎 Diamant-skin er klar til næste runde</p>' : pendingSkin === 'rainbow' ? '<p class="tip" style="color:#8fd0ff">🌈 Regnbue-skin er klar til næste runde</p>' : pendingSkin === 'flame' ? '<p class="tip" style="color:#ff8a3a">🔥 Flamme-skin er klar til næste runde</p>' : pendingSkin === 'angel' ? '<p class="tip" style="color:#fff3b0">😇 Engle-skin er klar til næste runde</p>' : '<p class="tip" style="color:#ffd84a">✨ Guld-skin er klar til næste runde</p>') : ''}
+    <div class="menu-btns"><button id="go">Start spil</button><button class="sec" id="admstart">⚙ Admin-tilstand</button><button class="sec" id="aprilstart">🤡 Aprilsnar</button><button class="sec" id="hsnow">🏆 Highscore</button><button class="sec" id="codesnow">🔑 Koder</button><button class="sec" id="lognow">Ændringslog</button></div>${pendingSkin ? (pendingSkin === 'diamond' ? '<p class="tip" style="color:#9fefff">💎 Diamant-skin er klar til næste runde</p>' : pendingSkin === 'rainbow' ? '<p class="tip" style="color:#8fd0ff">🌈 Regnbue-skin er klar til næste runde</p>' : pendingSkin === 'flame' ? '<p class="tip" style="color:#ff8a3a">🔥 Flamme-skin er klar til næste runde</p>' : pendingSkin === 'angel' ? '<p class="tip" style="color:#fff3b0">😇 Engle-skin er klar til næste runde</p>' : pendingSkin === 'owner' ? '<p class="tip" style="color:#ffd84a">👑 Ejer-skin er klar til næste runde</p>' : '<p class="tip" style="color:#ffd84a">✨ Guld-skin er klar til næste runde</p>') : ''}
     ${portrait ? '<p class="tip">📱 Spillet er bedst, når du vender telefonen på langs.</p>' : ''}
     ${TOUCH && !canFullscreen() ? '<p class="tip">Tip: Del → "Føj til hjemmeskærm" giver fuld skærm.</p>' : ''}
     <details ${TOUCH ? '' : 'open'}><summary>Sådan spiller du</summary>
@@ -2305,7 +2329,7 @@ ${controls}
 let aprilMode = false; // 🤡 aprilsnar: dine skud er granater – runden kommer på Aprilsnar-tavlen
 // Skade fra sværhedsgrad og skin – gælder alt: skud, flammer, super-missil og granater (og ganges med lilla sværd)
 function pDmg() { return D.playerDmg * (player.skinDmg || 1); }
-function start(admin) { D = DIFFS[difficulty]; reset(); if (!D.autoReload) player.ammo = CFG.hardStartAmmo; if (!D.autoMats) materials = CFG.startMaterials; player.skin = pendingSkin; if (player.skin === 'flame') player.skinDmg = 1.1; if (player.skin === 'angel') { player.skinDmg = 2; player.speedMul = 2; player.reloadMul = 2; player.revives = 5; } pendingSkin = null; adminFree = false; secretBuf = ''; for (const k in cheats) cheats[k] = false; adminMode = !!admin; usedAdmin = adminMode; state = 'play'; overlay.classList.add('hidden'); last = performance.now(); if (aprilMode) popups.push({ x: player.x, y: player.y - 70, text: '🤡 APRILSNAR – du skyder granater!', color: '#ff9de2', t: -1 }); }
+function start(admin) { D = DIFFS[difficulty]; reset(); if (!D.autoReload) player.ammo = CFG.hardStartAmmo; if (!D.autoMats) materials = CFG.startMaterials; player.skin = pendingSkin; if (player.skin === 'flame') player.skinDmg = 1.1; if (player.skin === 'angel') { player.skinDmg = 2; player.speedMul = 2; player.reloadMul = 2; player.revives = 5; } if (player.skin === 'owner') { player.skinDmg = 6; player.speedMul = 3; player.reloadMul = 3; player.revives = 5; player.maxHp *= 6; player.hp = player.maxHp; } pendingSkin = null; adminFree = false; secretBuf = ''; for (const k in cheats) cheats[k] = false; adminMode = !!admin; usedAdmin = adminMode; state = 'play'; overlay.classList.add('hidden'); last = performance.now(); if (aprilMode) popups.push({ x: player.x, y: player.y - 70, text: '🤡 APRILSNAR – du skyder granater!', color: '#ff9de2', t: -1 }); }
 function pause() {
   state = 'pause'; mouse.down = false; keys.clear();
   showPanel(`<h1>Pause</h1><p>Bølge ${wave} · ${kills} robotter nedlagt</p>`, 'Fortsæt', resume);
@@ -2466,6 +2490,7 @@ function openLog() {
 // ---------- Admin-panel ----------
 // ---------- Koder (fra startskærmen) ----------
 let pendingSkin = null; // gælder kun for næste runde
+const skinCodesUsed = new Set(); // ejer-skin: alle skin-koder skal tastes (i vilkårlig rækkefølge)
 const CODES = { 193423269: 'gold', 1715379802: 'rainbow', 916669625: 'diamond', 177609: 'flame', 1815438879: 'angel' }; // koderne gemmes kun som tal, så de ikke kan læses i koden
 function codeHash(t) { let h = 5381; for (const c of t.trim().toLowerCase()) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0; return h; }
 function openCodes() {
@@ -2484,6 +2509,7 @@ function openCodes() {
     else if (what === 'flame') { pendingSkin = 'flame'; msg.style.color = '#ff8a3a'; msg.textContent = '🔥 Flamme-skin aktiveret til næste runde!'; }
     else if (what === 'rainbow') { pendingSkin = 'rainbow'; msg.style.color = '#8fd0ff'; msg.textContent = '🌈 Regnbue-skin aktiveret til næste runde!'; }
     else { msg.style.color = ''; msg.textContent = 'Ukendt kode'; }
+    if (what) { skinCodesUsed.add(what); if (skinCodesUsed.size >= 5) { skinCodesUsed.clear(); pendingSkin = 'owner'; msg.style.color = '#ffd84a'; msg.textContent = '👑 Ejer-skin aktiveret til næste runde!'; } }
     inp.value = ''; inp.focus();
   };
 }
