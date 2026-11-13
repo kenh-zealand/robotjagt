@@ -82,6 +82,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.57', d: '13-11-2026', items: ['Flammerne fra minibossen, bossen og ultra-bossen er dobbelt så store, så de passer til, hvor langt de rækker'] },
   { v: '1.56', d: '12-11-2026', items: ['🤡 Ny spiltilstand: Aprilsnar – alle dine skud er granater, lige så stærke som rigtige granater. Den har sin egen highscore-tavle'] },
   { v: '1.55', d: '12-11-2026', items: ['Miniboss, boss og ultra-boss smadrer med det samme alle dine vægge inden for 3 spillerbredder', 'Flammerobotternes flammer er dobbelt så store, så de passer til, hvor langt de rækker'] },
   { v: '1.54', d: '12-11-2026', items: ['Der kan ligge ubegrænset mange granater på banen på samme tid, og der er ingen grænse for, hvor mange du kan have'] },
@@ -1020,10 +1021,10 @@ function shootHoming(r, k) {
   }
 }
 function robotFlame(r, nx, ny, fa, range, dps, dt) {
-  for (let k = 0; k < 2; k++) {
-    const a = fa + rand(-0.25, 0.25), v = rand(380, 480) * range / 240, life = rand(0.45, 0.6);
+  for (let k = 0; k < 4; k++) { // dobbelt så store flammer, der ender ved rækkevidden (rækkevidden er uændret)
+    const a = fa + rand(-0.25, 0.25), v = rand(600, 700) * range / 240, life = rand(0.45, 0.6);
     particles.push({ x: nx, y: ny, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life, max: life,
-      color: ['#ffdf6b', '#ff7a2a'][k], size: rand(5, 9), drag: 0.965, grow: true });
+      color: ['#ffdf6b', '#ff7a2a', '#ffb347', '#ff5a2a'][k], size: rand(10, 18), drag: 0.965, grow: true });
   }
   const pa = Math.atan2(player.y - ny, player.x - nx); let ad = pa - fa; ad = Math.atan2(Math.sin(ad), Math.cos(ad));
   if (Math.abs(ad) < 0.42 && Math.hypot(player.x - nx, player.y - ny) < range) hitPlayer(dps * dt, true);
