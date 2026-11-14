@@ -790,6 +790,7 @@ function drawMeteors() {
 
 function spawnWave() {
   wave++;
+  disguiseAgain();
   const bossWave = wave % D.bossEvery === 0;
   const hm = (1 + CFG.hpPerWave * (wave - 1)) * D.robotHp;
   const n = bossWave ? Math.floor(wave / 2) : 1 + wave;
@@ -2810,6 +2811,11 @@ function skinCodeUsed(what, msg) { // ejer-skinnet: alle skin-koder skal være b
 }
 // Robot-skin: forklædning – robotterne angriber dig ikke, før du selv nedlægger en
 const DISGUISE_DUMMY = { x: -1e5, y: -1e5, r: 18, hidden: true, reveal: 0, dead: false, disguise: true, remote: true, pend: 0, hard: false };
+function disguiseAgain() { // robot-skin: ny bølge = forklædt igen, indtil man nedlægger en robot
+  const p = player; if (p.skin !== 'robot' || p.disguise || p.dead) return;
+  p.disguise = true; burst(p.x, p.y, '#6fe39a', 20, 220);
+  popups.push({ x: p.x, y: p.y - 50, text: '🤖 Forklædt igen – robotterne angriber dig ikke', color: '#6fe39a', t: -0.6 });
+}
 function unmask() {
   const p = player; if (!p.disguise) return;
   p.disguise = false; shake = Math.max(shake, 10); burst(p.x, p.y, '#ff4a4a', 30, 320); rings.push({ x: p.x, y: p.y, t: 0, small: true });
@@ -3307,6 +3313,7 @@ function mpSendSnaps() {
 
 // ---------- Klient: verden fra værten ----------
 function mpApplySnap(s) {
+  if (s.wave > wave && wave > 0) disguiseAgain(); // ny bølge hos værten
   wave = s.wave; kills = s.kills;
   if (s.bt !== bannerText || s.bT > bannerT + 0.3) { bannerText = s.bt; bannerT = s.bT; }
   const oldR = new Map(robots.map(r => [r.id, r]));
