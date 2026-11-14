@@ -1004,6 +1004,7 @@ function hitRobot(r, b) {
 }
 function damageRobot(r, dmg, x, y, quiet) {
   if (!robots.includes(r)) return;
+  if (player.disguise && !player.hidden && !dmgByRobot && !mpDmgFrom) unmask(); // robot-skin: skyder du på en robot i det fri, er du afsløret
   if (MP && MP.role === 'client') { // multiplayer: værten bestemmer robotternes liv – vi viser bare træffet
     if (!r.id) return; const q = MP.dq.get(r.id); if (q) { q[0] += dmg; q[1] = q[1] && quiet ? 1 : 0; } else MP.dq.set(r.id, [dmg, quiet ? 1 : 0]);
     r.hp -= dmg; if (!quiet) { r.flash = 0.12; burst(x, y, '#ffe1a0', 8, 220); } return;
