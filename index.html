@@ -1626,7 +1626,11 @@ function robotMove(r, dt) {
     if (r.type === 'boss' || r.type === 'mini' || r.type === 'ultra') {
       const R = r.r + CFG.bossWallSmash; // smadrer alle dine vægge med det samme inden for 3 spillerbredder
       builtInBox(r.x - R, r.y - R, r.x + R, r.y + R, w => {
-        if (circleHitsRect(r.x, r.y, R, w)) { damageWall(w, w.hp + 1, true); shake = Math.max(shake, 4); }
+        if (!circleHitsRect(r.x, r.y, R, w)) return false;
+        if (w.maxHp > CFG.wallHp) { // bygmesterens vægge holder: miniboss 5 sek., boss 3 sek., ultra-boss 2 sek.
+          const T = r.type === 'mini' ? 5 : r.type === 'boss' ? 3 : 2;
+          damageWall(w, w.maxHp * dt / T, true); if (Math.random() < 0.15) burst(w.x + GS / 2, w.y + GS / 2, '#8a96a8', 3, 120);
+        } else { damageWall(w, w.hp + 1, true); shake = Math.max(shake, 4); }
         return false;
       });
     }
