@@ -183,6 +183,7 @@ const CFG = {
   lowRobots: 10,         // når der er 10 eller færre robotter tilbage …
   lowRobotsWait: 30,     // … starter næste bølge automatisk efter 30 sekunder
   maxWaveTime: 420,      // og efter 7 minutter starter næste bølge uanset hvad
+  infightMul: 3,         // robot-skin: robotternes skade på forræderen ganges med 3
   reviveTime: 3,         // multiplayer: sekunder ved en holdkammerat for at genoplive
   reviveDist: 70,
   hookRange: 720,        // fiskemand: harpunen når 20 spillerbredder
@@ -990,6 +991,7 @@ function teleport(r) {
   r.fireCd = Math.min(r.fireCd, 0.35);
 }
 function hitRobot(r, b) {
+  betray(r);
   sfx('hit', r.x, r.y);
   if (superCharge < CFG.superHits) {
     superCharge = Math.min(CFG.superHits, superCharge + (b.superGain || 1));
@@ -1012,7 +1014,8 @@ function damageRobot(r, dmg, x, y, quiet) {
   if (r.hp <= 0) {
     sfx(r.type === 'boss' || r.type === 'ultra' ? 'bossdie' : r.type === 'mini' ? 'bigdie' : 'die', r.x, r.y);
     robots.splice(robots.indexOf(r), 1); kills++;
-    if (MP && MP.role === 'host' && mpDmgFrom) mpSend({ t: 'unmask' }, MP.conns.get(mpDmgFrom)); else unmask(); // robot-skin: nu er du afsløret shake = Math.max(shake, 9);
+    if (MP && MP.role === 'host' && mpDmgFrom) mpSend({ t: 'unmask' }, MP.conns.get(mpDmgFrom)); else if (!dmgByRobot) unmask(); // robot-skin: nu er du afsløret (men ikke, når robotterne slår hinanden ihjel)
+    shake = Math.max(shake, 9);
     if (r.type === 'boss') {
       shake = 22; banner('BOSS BESEJRET!'); rings.push({ x: r.x, y: r.y, t: 0 });
       for (let k = 0; k < 4; k++) burst(r.x + rand(-40, 40), r.y + rand(-40, 40), ['#ff9d3b', '#ffdf6b', '#8b96a5', '#ff5a2a'][k], 35, 420);
@@ -1465,7 +1468,7 @@ function explode(x, y) {
 }
 
 function hitPlayer(dmg, quiet) {
-  if (player.disguise) return; // robot-skin: robotterne angriber dig ikke
+  if (player.disguise && !huntHit) return; // robot-skin: robotterne angriber dig ikke (kun forræderen)
   if (player.remote) { if (!player.dead && state === 'play') { player.pend += dmg; if (!quiet) player.hard = true; } return; } // multiplayer: skaden sendes til holdkammeraten
   if (state !== 'play' || cheats.god || player.invuln > 0 || player.dead) return;
   dmg *= (1 + CFG.dmgPerWave * (wave - 1)) * D.robotDmg;
@@ -1627,7 +1630,7 @@ function robotMove(r, dt) {
       });
     }
     if (r.type === 'ultra') { updateUltra(r, dt, d); return; }
-    const visible = !player.hidden || player.reveal > 0 || d < CFG.closeSight;
+    const visible = !!r.hunter || !player.hidden || player.reveal > 0 || d < CFG.closeSight; // forræderen ved, hvor du er
     const sees = d < CFG.robotView && visible && losRobot(r, player);
 
     r.flaming = false;
@@ -1769,10 +1772,25 @@ function robotMove(r, dt) {
 }
 function updateRobots(dt) {
   updateBurning(dt);
+  // Robot-skin: en robot, du skød fra en busk, går efter dig – og de andre robotter tror, det er den, der angriber, så de går efter den
+  rogueProxies = robots.filter(r => r.hunter).map(r => {
+    const g = r.rogueP || (r.rogueP = { r: r.r, hidden: false, reveal: 1, dead: false, remote: true, pend: 0, hard: false, robotTarget: r, angle: 0 });
+    g.x = r.x; g.y = r.y; return g;
+  });
   for (const r of robots) {
-    if (!MP && !player.disguise) { robotStep(r, dt); continue; }
-    const me = player; player = MP ? mpTarget(r) : player; if (player.disguise) player = DISGUISE_DUMMY; // forklædt: robotterne ser dig slet ikke // multiplayer: robotten går efter den nærmeste spiller
-    try { robotStep(r, dt); } finally { player = me; }
+    let tgt = null;
+    if (r.hunter) { tgt = hunterTarget(r); if (!tgt) r.hunter = null; }
+    else if (rogueProxies.length) { let bd = Infinity; for (const g of rogueProxies) { const d = Math.hypot(g.x - r.x, g.y - r.y); if (d < bd) { bd = d; tgt = g; } } }
+    if (!tgt && !MP && !player.disguise) { robotStep(r, dt); continue; }
+    const me = player, nb = bullets.length;
+    player = tgt || (MP ? mpTarget(r) : player); if (!tgt && player.disguise) player = DISGUISE_DUMMY; // forklædt: robotterne ser dig slet ikke
+    huntHit = !!r.hunter;
+    try { robotStep(r, dt); } finally { player = me; huntHit = false; }
+    for (let i = nb; i < bullets.length; i++) if (bullets[i].owner === 'r') bullets[i].src = r; // så robotten ikke rammer sig selv
+  }
+  for (const g of rogueProxies) if (g.pend > 0) { // skaden fra de andre robotter rammer forræderen
+    const r = g.robotTarget, dmg = g.pend * CFG.infightMul, q = !g.hard; g.pend = 0; g.hard = false;
+    if (robots.includes(r)) { dmgByRobot = true; try { damageRobot(r, dmg, r.x, r.y, q); } finally { dmgByRobot = false; } }
   }
   // Robotter skubber hinanden lidt væk, så de ikke klumper
   for (let i = 0; i < robots.length; i++) for (let j = i + 1; j < robots.length; j++) {
@@ -1816,7 +1834,8 @@ function updateBullets(dt) {
         for (const r of robots) if (Math.hypot(r.x - b.x, r.y - b.y) < r.r + 4) { hitRobot(r, b); dead = true; break; }
         if (!dead && MP && MP.ff) for (const o of others) if (!o.dead && Math.hypot(o.x - b.x, o.y - b.y) < o.r + 4) { mpFF(o, b.dmg * CFG.ffMul); dead = true; break; } // friendly fire
       } else if (b.owner !== 'v') {
-        for (const t of mpAll()) if (!t.dead && !t.disguise && Math.hypot(t.x - b.x, t.y - b.y) < t.r + (b.plasma ? 14 : b.big ? 8 : 4)) { mpHit(t, b.dmg); dead = true; if (b.plasma) { burst(b.x, b.y, '#7dffcf', 18, 260); rings.push({ x: b.x, y: b.y, t: 0.25, tele: true }); } break; }
+        const hunt = !!(b.src && b.src.hunter);
+        for (const t of mpAll().concat(rogueProxies)) if (!t.dead && (!t.disguise || hunt) && t.robotTarget !== b.src && Math.hypot(t.x - b.x, t.y - b.y) < t.r + (b.plasma ? 14 : b.big ? 8 : 4)) { huntHit = hunt; try { mpHit(t, b.dmg); } finally { huntHit = false; } dead = true; if (b.plasma) { burst(b.x, b.y, '#7dffcf', 18, 260); rings.push({ x: b.x, y: b.y, t: 0.25, tele: true }); } break; }
       }
     }
     if (dead) { if (aprilMode && b.owner === 'p') aprilBoom(b); bullets.splice(i, 1); }
@@ -1916,6 +1935,10 @@ function draw() {
     ctx.font = '900 ' + (P.icon.length > 1 ? 15 : 22) + 'px system-ui,sans-serif'; ctx.fillText(P.icon, pu.x, pu.y + bob + 1);
   }
   for (const r of robots) drawRobot(r);
+  for (const r of robots) if (r.hunter) { // forræderen: rød, pulserende ring
+    ctx.save(); ctx.strokeStyle = `rgba(255,70,70,${0.55 + 0.35 * Math.sin(time * 8)})`; ctx.lineWidth = 3; circle(r.x, r.y, r.r + 8); ctx.stroke();
+    ctx.font = '800 11px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#ff6b5b'; ctx.fillText('😡', r.x, r.y - r.r - 18); ctx.restore();
+  }
   for (const r of robots) if (r.slowT > 0) { // frost på nedfrosne robotter
     ctx.save(); ctx.translate(r.x, r.y); ctx.globalAlpha = Math.min(1, r.slowT) * 0.85;
     ctx.strokeStyle = '#bff3ff'; ctx.lineWidth = 2; ctx.shadowColor = '#7fdcff'; ctx.shadowBlur = 8;
@@ -2851,6 +2874,18 @@ function disguiseAgain() { // robot-skin: ny bølge = forklædt igen, indtil man
   p.disguise = true; burst(p.x, p.y, '#6fe39a', 20, 220);
   popups.push({ x: p.x, y: p.y - 50, text: '🤖 Forklædt igen – robotterne angriber dig ikke', color: '#6fe39a', t: -0.6 });
 }
+let rogueProxies = [], huntHit = false, dmgByRobot = false;
+function hunterTarget(r) { // forræderens mål: den, der skød den
+  if (r.hunter === 'me' || r.hunter === 'host') return MP && MP.role === 'host' && r.hunter === 'host' ? player : !MP ? player : null;
+  return MP && MP.players ? MP.players.get(r.hunter) || null : null;
+}
+function betray(r) { // du skød en robot, mens du var forklædt og gemt i en busk
+  if (!player.disguise || !player.hidden || r.hunter) return;
+  if (MP && MP.role === 'client') { if (r.id) MP.betray.add(r.id); r.hunter = MP.id; }
+  else r.hunter = MP ? 'host' : 'me';
+  r.alertT = 1.5; sfx('spot', r.x, r.y);
+  popups.push({ x: r.x, y: r.y - 50, text: '😡 Den så dig! De andre tror, den angriber dig', color: '#ff6b5b', t: -0.3 });
+}
 function unmask() {
   const p = player; if (!p.disguise) return;
   if (p.hidden) { if (time - (p.bushNote || -9) > 3) { p.bushNote = time; popups.push({ x: p.x, y: p.y - 50, text: '🌿 Ingen så, hvem der skød', color: '#6fe39a', t: 0 }); } return; } // skudt fra en busk: stadig forklædt
@@ -3187,7 +3222,7 @@ function mpStartGame(slot) {
   if (TOUCH) goFullscreen();
   start(false);
   player.x += slot * 60; player.y += slot * 30;
-  others = []; MP.revT = {}; MP.took = new Set(); MP.reqPU = new Set(); MP.dq = new Map(); MP.burn = {}; MP.shots = []; MP.slow = new Set(); MP.knock = {}; MP.adminUsed = false; MP.admin = false; MP.menu = false; MP.snapT = 0; MP.stT = 0; MP.over = false; mpFx = [];
+  others = []; MP.revT = {}; MP.took = new Set(); MP.reqPU = new Set(); MP.dq = new Map(); MP.burn = {}; MP.shots = []; MP.slow = new Set(); MP.knock = {}; MP.betray = new Set(); MP.adminUsed = false; MP.admin = false; MP.menu = false; MP.snapT = 0; MP.stT = 0; MP.over = false; mpFx = [];
   if (MP.role === 'host') { MP.players = new Map(); }
   popups.push({ x: player.x, y: player.y - 90, text: '👥 Multiplayer – ' + Object.values(MP.names).join(', '), color: '#8fd0ff', t: -1.2 });
 }
@@ -3211,7 +3246,7 @@ async function mpJoin(name, code) {
   peer.on('error', er => { if (!MP || !MP.id) fail(er.type === 'peer-unavailable' ? 'Fandt intet spil med koden ' + code : 'Kunne ikke forbinde (' + (er.type || er) + ')'); });
   peer.on('open', () => {
     const conn = peer.connect(MP_PREFIX + code, { reliable: true });
-    MP = { role: 'client', peer, conn, code, id: null, names: {}, ff: false, mode: 'normal', took: new Set(), revT: {}, reqPU: new Set(), dq: new Map(), burn: {}, shots: [], slow: new Set(), knock: {} };
+    MP = { role: 'client', peer, conn, code, id: null, names: {}, ff: false, mode: 'normal', took: new Set(), revT: {}, reqPU: new Set(), dq: new Map(), burn: {}, shots: [], slow: new Set(), knock: {}, betray: new Set() };
     setTimeout(() => { if (MP && MP.conn === conn && !MP.id) fail('Fandt intet spil med koden ' + code); }, 12000);
     conn.on('open', () => mpSend({ t: 'hello', name, v: VERSION }, conn));
     conn.on('data', d => { try { mpClientMsg(d); } catch (e) { reportError(e); } });
@@ -3259,6 +3294,7 @@ function mpHostMsg(id, d) {
     try { for (const [rid, dmg, q] of d.dr || []) { const r = robots.find(o => o.id === rid); if (r) damageRobot(r, dmg, r.x, r.y, !!q); } } finally { mpDmgFrom = ''; }
     for (const k in d.burn || {}) { const r = robots.find(o => o.id === +k); if (r) { r.burnT = CFG.burnTime; r.burnDps = d.burn[k]; } }
     for (const k in d.kn || {}) { const r = robots.find(o => o.id === +k); if (r) { r.x = d.kn[k][0]; r.y = d.kn[k][1]; pushOut(r); } }
+    for (const rid of d.bt || []) { const r = robots.find(o => o.id === rid); if (r && !r.hunter) r.hunter = id; }
     for (const rid of d.sl || []) { const r = robots.find(o => o.id === rid); if (r) r.slowT = CFG.iceSlowTime; }
     for (const s of d.sh || []) bullets.push({ x: s[0], y: s[1], vx: s[2], vy: s[3], life: s[4], owner: 'v', team: true, strong: !!s[5], april: !!s[6], from: id });
     return;
@@ -3306,7 +3342,7 @@ function mpBoomFx(k, x, y) { // en holdkammerats granat eller missil – kun det
 }
 
 // ---------- Vært: send verden til spillerne ----------
-const MP_SKIP = new Set(['target', 'lastSeen', 'wallTarget', 'hitWalls', 'sent', 'takenBy', 'tx', 'ty']);
+const MP_SKIP = new Set(['target', 'lastSeen', 'wallTarget', 'hitWalls', 'sent', 'takenBy', 'tx', 'ty', 'rogueP']);
 function mpOut(o) { const r = {}; for (const k in o) { if (MP_SKIP.has(k)) continue; const v = o[k]; r[k] = typeof v === 'number' ? Math.round(v * 10) / 10 : v; } return r; }
 const mpR = v => Math.round(v);
 function mpHostTick(dt) {
@@ -3387,7 +3423,7 @@ function mpApplySnap(s) {
     if (o) { const ox = o.x, oy = o.y; Object.assign(o, n); o.tx = n.x; o.ty = n.y; o.x = ox; o.y = oy; return o; }
     n.tx = n.x; n.ty = n.y; return n;
   });
-  if (s.hit && s.hit[0] > 0) hitPlayer(s.hit[0], !s.hit[1]);
+  if (s.hit && s.hit[0] > 0) { huntHit = true; try { hitPlayer(s.hit[0], !s.hit[1]); } finally { huntHit = false; } } // værten sender kun skade, der må ramme
 }
 function mpFlameFx(r) { // robotternes flammer tegnes hos klienten ud fra, hvilken vej robotten vender
   if (Math.random() < 0.35) return;
@@ -3433,6 +3469,7 @@ function mpClientUpdate(dt) {
     if (MP.shots.length) { msg.sh = MP.shots; MP.shots = []; }
     if (MP.slow.size) { msg.sl = [...MP.slow]; MP.slow.clear(); }
     if (Object.keys(MP.knock).length) { msg.kn = MP.knock; MP.knock = {}; }
+    if (MP.betray.size) { msg.bt = [...MP.betray]; MP.betray.clear(); }
     mpSend(msg);
   }
 }
