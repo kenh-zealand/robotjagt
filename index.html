@@ -32,6 +32,7 @@
   #credit{font-size:12px;font-weight:700;color:#c9d3df;background:rgba(13,16,20,.72);border:1px solid #33404f;border-radius:8px;padding:5px 10px}
   #ver{margin:0;padding:5px 10px;font-size:12px;font-weight:700;background:rgba(13,16,20,.72);color:#c9d3df;border:1px solid #33404f;border-radius:8px}
   #ver:hover{color:#fff}
+  #sndbtn{margin:0;padding:4px 8px;font-size:13px;background:rgba(13,16,20,.72);color:#c9d3df;border:1px solid #33404f;border-radius:8px;line-height:1}
   .menu-btns{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:6px 0 4px}
   .menu-btns button{margin:0}
   details{text-align:left;margin-top:12px;border-top:1px solid #2c3644;padding-top:8px}
@@ -85,7 +86,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="foot"><button id="ver" title="Se ændringer"></button><span id="credit">Made by agent7329</span></div>
+<div id="foot"><button id="ver" title="Se ændringer"></button><button id="sndbtn" title="Stemningslyd til/fra (M)">🔊</button><span id="credit">Made by agent7329</span></div>
 <div id="overlay"><div class="panel" id="panel"></div></div>
 
 <script>
@@ -94,6 +95,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.61', d: '14-11-2026', items: ['🎵 Stemningslyd: mørk, rolig drone med vind og fjerne metalklange', 'Lyden bliver mere anspændt, jo flere robotter der er – og får et dunkende hjerteslag, når der er en boss', 'Slå lyden til og fra med M eller 🔊-knappen nederst til venstre (den husker dit valg)'] },
   { v: '1.60', d: '13-11-2026', items: ['Highscore-tavlen passer nu til skærmen, så man kan se hele top 10 uden at scrolle – også efter en runde og på telefon', 'Tavlerne er delt i to rækker: Alene og 👥 Hold'] },
   { v: '1.59', d: '13-11-2026', items: ['Admin kan bruges i multiplayer – vælg om det skal ske for dig, en bestemt holdkammerat eller hele holdet', 'Robotter og bølger fra admin gælder hele holdet, og spillet kører videre, mens panelet er åbent', 'Multiplayer-runder med admin kommer ikke på highscore'] },
   { v: '1.58', d: '13-11-2026', items: ['👥 Multiplayer: spil sammen på hold med op til 3 spillere – den ene laver en kode, de andre skriver den', 'Friendly fire kan slås til og fra i lobbyen (gør en fjerdedel skade)', 'Er man nede, kan en holdkammerat genoplive en ved at stå ved en i 3 sekunder – spillet slutter, når hele holdet er nede', 'Våben, granater og kasser forsvinder kun for den, der tager dem – buffs får hele holdet', 'Egne multiplayer-highscore-tavler for Let, Normal, Svær og Aprilsnar'] },
@@ -2364,7 +2366,7 @@ function menu() {
       <li><b>Sigt:</b> med musen</li>
       <li><b>Skyd:</b> mellemrum eller venstreklik – skyder der, hvor du sigter</li>
       <li><b>Byg en væg:</b> højreklik (hold og træk for at bygge flere)</li>
-      <li><b>Super:</b> Q · <b>Granat:</b> F (kastes hen hvor musen peger) · <b>Pause:</b> P eller Esc · <b>Admin:</b> E</li>
+      <li><b>Super:</b> Q · <b>Granat:</b> F (kastes hen hvor musen peger) · <b>Pause:</b> P eller Esc · <b>Admin:</b> E · <b>Lyd:</b> M</li>
       <li><b>Skift våben:</b> tast 1 = pistol, 2, 3 … = våbnene i den rækkefølge du samlede dem op (eller klik på dem nederst)</li>`;
   const portrait = TOUCH && VH > VW;
   panel.innerHTML = `<h1>Robotjagt</h1><p>Overlev så mange bølger af robotter som muligt. <span style="color:#93a0b0">· v${VERSION}</span></p>
@@ -3311,6 +3313,113 @@ async function mpGameOverPanel(d) {
   mpPanel('<div class="hsview">' + head + (list ? hsTable(list, mark, board) : '<p class="muted">Highscore kunne ikke hentes.</p>') + btns + '</div>'); wire(); fitPanel();
 }
 
+// =====================================================================
+// 🎵 Stemningslyd – laves direkte i browseren (Web Audio), så der er ingen lydfiler at hente
+// Mørk, langsom drone + vind + fjerne metalklange. Bliver mere anspændt, jo flere robotter der er,
+// og får et dunkende hjerteslag, når der er en boss. M slår lyden til og fra.
+// =====================================================================
+const AMB = { ctx: null, master: null, n: null, on: lsGet('robotjagt_sound', '1') === '1', vol: 0.8, lvl: 0, nextPing: 0, nextBeat: 0 };
+function ambNoise(c, sec) {
+  const b = c.createBuffer(2, c.sampleRate * sec, c.sampleRate);
+  for (let ch = 0; ch < 2; ch++) { const d = b.getChannelData(ch); let last = 0; for (let i = 0; i < d.length; i++) { last = last * 0.97 + (Math.random() * 2 - 1) * 0.03; d[i] = last * 6; } } // brunlig støj = blød vind
+  return b;
+}
+function ambImpulse(c, sec, decay) { // efterklang som i en stor, tom hal
+  const b = c.createBuffer(2, c.sampleRate * sec, c.sampleRate);
+  for (let ch = 0; ch < 2; ch++) { const d = b.getChannelData(ch); for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, decay); }
+  return b;
+}
+function ambBuild() {
+  const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return false;
+  const c = AMB.ctx = new AC();
+  const master = AMB.master = c.createGain(); master.gain.value = 0;
+  const comp = c.createDynamicsCompressor(); master.connect(comp); comp.connect(c.destination);
+  const rev = c.createConvolver(); rev.buffer = ambImpulse(c, 5, 2.4);
+  const revG = c.createGain(); revG.gain.value = 0.7; rev.connect(revG); revG.connect(master);
+  const dry = c.createGain(); dry.gain.value = 0.5; dry.connect(master);
+  const send = (node, wet = 1) => { node.connect(dry); const g = c.createGain(); g.gain.value = wet; node.connect(g); g.connect(rev); };
+  // 1) Drone: dybe, let forstemte savtakker gennem et langsomt åndende filter (A-mol)
+  const filt = c.createBiquadFilter(); filt.type = 'lowpass'; filt.frequency.value = 260; filt.Q.value = 5;
+  const lfo = c.createOscillator(); lfo.frequency.value = 0.045; const lfoG = c.createGain(); lfoG.gain.value = 140; lfo.connect(lfoG); lfoG.connect(filt.frequency); lfo.start();
+  const droneG = c.createGain(); droneG.gain.value = 0.14; filt.connect(droneG); send(droneG, 1);
+  for (const [f, d, v] of [[55, -8, 0.5], [55, 7, 0.5], [82.41, -4, 0.35], [110, 4, 0.22], [130.81, -6, 0.12]]) {
+    const o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f; o.detune.value = d;
+    const g = c.createGain(); g.gain.value = v; o.connect(g); g.connect(filt); o.start();
+  }
+  // 2) Vind: støj gennem et filter, der langsomt fejer op og ned
+  const noise = c.createBufferSource(); noise.buffer = ambNoise(c, 6); noise.loop = true;
+  const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 500; bp.Q.value = 0.7;
+  const wl = c.createOscillator(); wl.frequency.value = 0.06; const wlG = c.createGain(); wlG.gain.value = 320; wl.connect(wlG); wlG.connect(bp.frequency); wl.start();
+  const windG = c.createGain(); windG.gain.value = 0.09; noise.connect(bp); bp.connect(windG); send(windG, 0.8); noise.start();
+  // 3) Spænding: højere, skurrende flade (lille sekund), der kommer frem, når der er mange robotter
+  const tf = c.createBiquadFilter(); tf.type = 'lowpass'; tf.frequency.value = 700;
+  const tG = c.createGain(); tG.gain.value = 0; tf.connect(tG); send(tG, 1.2);
+  for (const [f, d] of [[220, -6], [233.08, 5], [329.63, 0], [349.23, -3]]) {
+    const o = c.createOscillator(); o.type = 'triangle'; o.frequency.value = f; o.detune.value = d;
+    const trem = c.createOscillator(); trem.frequency.value = 0.3 + Math.random() * 0.4; const tg = c.createGain(); tg.gain.value = 0.08;
+    const g = c.createGain(); g.gain.value = 0.12; trem.connect(tg); tg.connect(g.gain); trem.start();
+    o.connect(g); g.connect(tf); o.start();
+  }
+  AMB.n = { filt, droneG, windG, tG, tf, rev, dry };
+  return true;
+}
+function ambPing(intensity) { // fjern metalklang i hallen – A-mol pentaton
+  const c = AMB.ctx, t = c.currentTime;
+  const notes = [220, 261.63, 293.66, 329.63, 392, 440, 523.25, 587.33, 659.25];
+  const f = notes[Math.floor(Math.random() * notes.length)] * (Math.random() < 0.3 ? 0.5 : 1);
+  const g = c.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.05 + 0.03 * intensity, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 4.5);
+  const pan = c.createStereoPanner ? c.createStereoPanner() : null; if (pan) pan.pan.value = Math.random() * 1.6 - 0.8;
+  for (const [mul, v] of [[1, 1], [2.76, 0.35], [5.4, 0.12]]) { // klokkeagtige overtoner
+    const o = c.createOscillator(); o.type = 'sine'; o.frequency.value = f * mul; const og = c.createGain(); og.gain.value = v;
+    o.connect(og); og.connect(g); o.start(t); o.stop(t + 4.6);
+  }
+  if (pan) { g.connect(pan); pan.connect(AMB.n.rev); pan.connect(AMB.n.dry); } else { g.connect(AMB.n.rev); }
+}
+function ambBeat() { // dybt, dumpt hjerteslag (boss)
+  const c = AMB.ctx, t = c.currentTime;
+  for (const [dt, v] of [[0, 0.5], [0.22, 0.32]]) {
+    const o = c.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(70, t + dt); o.frequency.exponentialRampToValueAtTime(38, t + dt + 0.25);
+    const g = c.createGain(); g.gain.setValueAtTime(0, t + dt); g.gain.linearRampToValueAtTime(v, t + dt + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + dt + 0.4);
+    o.connect(g); g.connect(AMB.n.dry); o.start(t + dt); o.stop(t + dt + 0.45);
+  }
+}
+function ambStart() { // kaldes ved første klik/tast (browsere kræver det)
+  if (!AMB.on) return;
+  if (!AMB.ctx && !ambBuild()) return;
+  if (AMB.ctx.state === 'suspended') AMB.ctx.resume();
+}
+function ambToggle() {
+  AMB.on = !AMB.on; lsSet('robotjagt_sound', AMB.on ? '1' : '0');
+  if (AMB.on) ambStart();
+  if (AMB.ctx) AMB.master.gain.setTargetAtTime(AMB.on ? AMB.vol * 0.6 : 0, AMB.ctx.currentTime, 0.4);
+  const b = document.getElementById('sndbtn'); if (b) b.textContent = AMB.on ? '🔊' : '🔇';
+}
+function ambTick(dt) {
+  if (!AMB.ctx || !AMB.n || AMB.ctx.state !== 'running') return;
+  const c = AMB.ctx, t = c.currentTime, n = AMB.n;
+  const boss = state === 'play' && robots.some(r => r.type === 'boss' || r.type === 'ultra');
+  let target = 0.15; // menu: rolig
+  if (state === 'play') target = player.dead ? 0.1 : Math.min(1, 0.25 + robots.length * 0.05 + (boss ? 0.45 : 0));
+  else if (state === 'over') target = 0.05;
+  AMB.lvl += (target - AMB.lvl) * Math.min(1, dt * 0.6); const L = AMB.lvl;
+  const vol = !AMB.on ? 0 : state === 'pause' || state === 'admin' || state === 'log' ? AMB.vol * 0.35 : AMB.vol * (0.6 + 0.4 * L);
+  AMB.master.gain.setTargetAtTime(vol, t, 0.5);
+  n.tG.gain.setTargetAtTime(Math.max(0, L - 0.35) * 0.45, t, 0.8);
+  n.tf.frequency.setTargetAtTime(500 + 1400 * L, t, 0.8);
+  n.droneG.gain.setTargetAtTime(0.12 + 0.06 * L, t, 0.8);
+  n.windG.gain.setTargetAtTime(0.08 + 0.05 * (1 - L), t, 1);
+  if (!AMB.on) return;
+  AMB.nextPing -= dt; if (AMB.nextPing <= 0) { AMB.nextPing = rand(3.5, 8) * (1.1 - 0.5 * L); ambPing(L); }
+  if (boss && state === 'play') { AMB.nextBeat -= dt; if (AMB.nextBeat <= 0) { AMB.nextBeat = 1.15 - 0.3 * L; ambBeat(); } }
+}
+addEventListener('pointerdown', ambStart);
+addEventListener('keydown', e => {
+  if (e.code === 'KeyM' && !e.repeat && !(e.target && e.target.tagName === 'INPUT') && state !== 'admin' && !(MP && MP.admin)) { ambToggle(); return; }
+  ambStart();
+});
+document.getElementById('sndbtn').textContent = AMB.on ? '🔊' : '🔇';
+document.getElementById('sndbtn').onclick = e => { e.stopPropagation(); ambToggle(); };
+
 let last = performance.now();
 // En fejl i ét billede må ikke stoppe hele spillet: næste billede bestilles først, og fejl fanges og vises kort.
 let errShownAt = -99;
@@ -3325,6 +3434,7 @@ function loop(now) {
   const dt = Math.min(0.033, (now - last) / 1000); last = now;
   try { if (state === 'play') update(dt); } catch (e) { reportError(e); }
   try { if (state !== 'pause' && state !== 'admin' && state !== 'log') updateParticles(dt); } catch (e) { reportError(e); }
+  try { ambTick(dt); } catch (e) {}
   try { draw(); } catch (e) { reportError(e); try { ctx.restore(); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); } catch (er) {} }
   document.getElementById('foot').classList.toggle('hidden', state === 'play' && isTouch);
 }
