@@ -1248,7 +1248,7 @@ function updateSupplies(dt) {
     const o = supplies[i]; o.t += dt;
     if (!player.dead && !mpTaken(o) && Math.hypot(o.x - player.x, o.y - player.y) < player.r + 20) {
       if (o.type === 'ammo') { player.ammo += CFG.hardAmmoPickup; popups.push({ x: player.x, y: player.y - 40, text: `+${CFG.hardAmmoPickup} skud`, color: '#f0a33a', t: 0.3 }); }
-      else { materials = Math.min(matCap(), materials + CFG.hardWoodPickup); popups.push({ x: player.x, y: player.y - 40, text: `+${CFG.hardWoodPickup} byggemateriale`, color: '#e6c08a', t: 0.3 }); }
+      else { materials = Math.min(matCap(), materials + CFG.hardWoodPickup * matGain()); popups.push({ x: player.x, y: player.y - 40, text: `+${CFG.hardWoodPickup * matGain()} byggemateriale`, color: '#e6c08a', t: 0.3 }); }
       burst(o.x, o.y, o.type === 'ammo' ? '#f0a33a' : '#c9a06a', 14, 200);
       mpPickedUp(supplies, i);
     }
@@ -1507,7 +1507,7 @@ function update(dt) {
   }
   matTimer += dt;
   if (!D.autoMats) matTimer = 0; // Svær: byggematerialer findes kun på banen
-  while (matTimer >= matEvery()) { matTimer -= matEvery(); if (materials < matCap()) materials++; }
+  while (matTimer >= matEvery()) { matTimer -= matEvery(); if (materials < matCap()) materials = Math.min(matCap(), materials + matGain()); }
   for (const w of builtWalls) w.flash = Math.max(0, w.flash - dt);
   flowTimer -= dt;
   if (robots.length && (flowDirty || flowTimer <= 0)) { computeFlow(); flowDirty = false; flowTimer = 0.25; }
@@ -1555,7 +1555,7 @@ function updatePlayer(dt) {
   pushOut(p, p.wallBan <= 0 && !D.wallsSolid); // Svær: man kan ikke gå igennem sine egne vægge
   const insideWall = !!builtInBox(p.x - p.r, p.y - p.r, p.x + p.r, p.y + p.r, w => circleHitsRect(p.x, p.y, p.r * 0.6, w));
   p.inWallT = insideWall ? (p.inWallT || 0) + dt : 0;
-  if (p.inWallT > CFG.insideWallMax) {
+  if (p.inWallT > inWallMax()) {
     p.inWallT = 0; p.wallBan = CFG.wallBanTime;
     ejectFromWalls(p);
     popups.push({ x: p.x, y: p.y - 40, text: 'Smidt ud af væggen! (20 sek.)', color: '#ffb0a0', t: 0 });
@@ -2430,7 +2430,7 @@ function drawHUDInner() {
   {
     let t = '', col = '';
     if (p.wallBan > 0) { t = `Kan ikke gå gennem vægge  ${p.wallBan.toFixed(0)} s`; col = 'rgba(150,60,40,.9)'; }
-    else if (p.inWallT > 0) { t = `Inde i væggen – ud om ${Math.max(0, CFG.insideWallMax - p.inWallT).toFixed(1)} s`; col = 'rgba(120,85,40,.9)'; }
+    else if (p.inWallT > 0) { t = `Inde i væggen – ud om ${Math.max(0, inWallMax() - p.inWallT).toFixed(1)} s`; col = 'rgba(120,85,40,.9)'; }
     if (t) {
       ctx.font = '700 13px system-ui,sans-serif'; ctx.textAlign = 'left';
       const tw = ctx.measureText(t).width + 26;
@@ -2909,6 +2909,8 @@ function betray(r) { // du skød en robot, mens du var forklædt og gemt i en bu
 }
 // 🔨 Bygmester: ingen grænse for byggemateriale, materiale 2,5 gange hurtigere, vægge 3 gange stærkere
 function matCap() { return player.skin === 'builder' ? Infinity : CFG.maxMaterials; }
+function matGain() { return player.skin === 'builder' ? 3 : 1; } // bygmester: 3 byggematerialer hver gang
+function inWallMax() { return player.skin === 'builder' ? 40 : CFG.insideWallMax; } // bygmester: må stå i væggene i 40 sek.
 function matEvery() { return CFG.materialEvery / (player.skin === 'builder' ? 2.5 : 1); }
 function wallHpFor(strong) { return CFG.wallHp * (strong ? 3 : 1); }
 function unmask() {
@@ -3467,7 +3469,7 @@ function mpFlameFx(r) { // robotternes flammer tegnes hos klienten ud fra, hvilk
 function mpClientUpdate(dt) {
   time += dt;
   matTimer += dt; if (!D.autoMats) matTimer = 0;
-  while (matTimer >= matEvery()) { matTimer -= matEvery(); if (materials < matCap()) materials++; }
+  while (matTimer >= matEvery()) { matTimer -= matEvery(); if (materials < matCap()) materials = Math.min(matCap(), materials + matGain()); }
   for (const w of builtWalls) w.flash = Math.max(0, w.flash - dt);
   const k = Math.min(1, dt * 14);
   for (const r of robots) {
@@ -3513,7 +3515,7 @@ function mpClientPickups() {
   for (const o of supplies) if (!mpTaken(o) && Math.hypot(o.x - p.x, o.y - p.y) < p.r + 20) {
     MP.took.add(o.id); mpSend({ t: 'take', id: o.id });
     if (o.type === 'ammo') { p.ammo += CFG.hardAmmoPickup; popups.push({ x: p.x, y: p.y - 40, text: `+${CFG.hardAmmoPickup} skud`, color: '#f0a33a', t: 0.3 }); }
-    else { materials = Math.min(matCap(), materials + CFG.hardWoodPickup); popups.push({ x: p.x, y: p.y - 40, text: `+${CFG.hardWoodPickup} byggemateriale`, color: '#e6c08a', t: 0.3 }); }
+    else { materials = Math.min(matCap(), materials + CFG.hardWoodPickup * matGain()); popups.push({ x: p.x, y: p.y - 40, text: `+${CFG.hardWoodPickup * matGain()} byggemateriale`, color: '#e6c08a', t: 0.3 }); }
     burst(o.x, o.y, o.type === 'ammo' ? '#f0a33a' : '#c9a06a', 14, 200);
   }
 }
