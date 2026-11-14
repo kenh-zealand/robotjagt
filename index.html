@@ -109,6 +109,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.63', d: '14-11-2026', items: ['🔊 Lydeffekter til alt: hvert våben har sin egen lyd, robotternes skud, plasma, missiler, flammer, save og stamp', 'Lyd når robotter bliver ramt og dør (større brag for minibosser og bosser), når skud rammer vægge, når du bliver ramt, og ved eksplosioner', 'Lyd ved pickups, våben, granatkast, super, byggeri, vægge der går i stykker, ny bølge og genoplivning', 'Lyde langt væk er svagere og kommer fra venstre eller højre – M slår al lyd til og fra'] },
   { v: '1.62', d: '14-11-2026', items: ['Når der er 10 eller færre robotter tilbage, starter næste bølge automatisk efter 30 sekunder – så man ikke kan blive og samle powerups i det uendelige', 'En bølge varer højst 7 minutter – derefter starter den næste uanset hvad', 'Nedtællingen til næste bølge vises øverst til højre'] },
   { v: '1.61', d: '14-11-2026', items: ['🎵 Stemningslyd: mørk, rolig drone med vind og fjerne metalklange', 'Lyden bliver mere anspændt, jo flere robotter der er – og får et dunkende hjerteslag, når der er en boss', 'Slå lyden til og fra med M eller 🔊-knappen nederst til venstre (den husker dit valg)'] },
   { v: '1.60', d: '13-11-2026', items: ['Highscore-tavlen passer nu til skærmen, så man kan se hele top 10 uden at scrolle – også efter en runde og på telefon', 'Tavlerne er delt i to rækker: Alene og 👥 Hold'] },
@@ -531,7 +532,7 @@ function damageWall(w, dmg, raw) {
   if (!builtAt[w.i]) return;
   w.hp -= raw ? dmg : dmg * waveDmgMul(); w.flash = 0.1;
   if (w.hp <= 0) {
-    builtWalls.splice(builtWalls.indexOf(w), 1); builtAt[w.i] = null; flowDirty = true;
+    sfx('wallbreak', w.x + GS / 2, w.y + GS / 2); builtWalls.splice(builtWalls.indexOf(w), 1); builtAt[w.i] = null; flowDirty = true;
     burst(w.x + GS / 2, w.y + GS / 2, '#b07a40', 22, 260); burst(w.x + GS / 2, w.y + GS / 2, '#6e4a24', 12, 180);
   }
 }
@@ -595,7 +596,7 @@ function tryBuild(wx, wy, quiet) {
     return false;
   }
   const w = { x: c.x, y: c.y, w: GS, h: GS, hp: CFG.wallHp, maxHp: CFG.wallHp, i: c.i, flash: 0 };
-  builtWalls.push(w); builtAt[c.i] = w; materials--; flowDirty = true;
+  builtWalls.push(w); builtAt[c.i] = w; materials--; flowDirty = true; sfx('build', wx, wy);
   if (MP && MP.role === 'client') mpSend({ t: 'build', x: Math.round(wx), y: Math.round(wy) }); // værten bygger den for hele holdet
   burst(c.x + GS / 2, c.y + GS / 2, '#c9a06a', 10, 160);
   return true;
@@ -683,7 +684,7 @@ function updateUltra(r, dt, d) {
   // plasmakugler – store, langsomme og de brænder sig gennem dine vægge
   r.plasmaCd -= dt;
   if (r.plasmaCd <= 0 && d < 1000) {
-    const n = enr ? 5 : 3, base = Math.atan2(player.y - r.y, player.x - r.x);
+    const n = enr ? 5 : 3, base = Math.atan2(player.y - r.y, player.x - r.x); sfx('plasma', r.x, r.y);
     for (let i = 0; i < n; i++) {
       const a = base + (i - (n - 1) / 2) * 0.22;
       bullets.push({ x: r.x + Math.cos(a) * (r.r + 10), y: r.y + Math.sin(a) * (r.r + 10), vx: Math.cos(a) * 230, vy: Math.sin(a) * 230,
@@ -708,7 +709,7 @@ function updateUltra(r, dt, d) {
   // chokbølge når du er for tæt på
   r.stompCd -= dt;
   if (r.stompCd <= 0 && d < r.r + 130) {
-    r.stompCd = 4; shake = Math.max(shake, 14); rings.push({ x: r.x, y: r.y, t: 0, small: true }); burst(r.x, r.y, '#ff9db5', 30, 380);
+    r.stompCd = 4; shake = Math.max(shake, 14); sfx('stomp', r.x, r.y); rings.push({ x: r.x, y: r.y, t: 0, small: true }); burst(r.x, r.y, '#ff9db5', 30, 380);
     hitPlayer(500);
     const ux = (player.x - r.x) / (d || 1), uy = (player.y - r.y) / (d || 1); player.x += ux * 120; player.y += uy * 120; pushOut(player, player.wallBan <= 0 && !D.wallsSolid);
   }
@@ -733,7 +734,7 @@ function updateMeteors(dt) {
     if (m.t >= m.warn) {
       meteors.splice(i, 1);
       const R = CFG.ultraMeteorRadius;
-      shake = Math.max(shake, 8); rings.push({ x: m.x, y: m.y, t: 0.15, meteor: true });
+      shake = Math.max(shake, 8); rings.push({ x: m.x, y: m.y, t: 0.15, meteor: true }); sfx('boom2', m.x, m.y);
       burst(m.x, m.y, '#ff7a2a', 22, 320); burst(m.x, m.y, '#5a4a40', 14, 220); burst(m.x, m.y, '#ffdf6b', 8, 160);
       for (const t of mpAll()) if (!t.dead && !t.disguise && Math.hypot(t.x - m.x, t.y - m.y) < R + t.r) mpHit(t, CFG.ultraMeteorDamage);
       builtInBox(m.x - R, m.y - R, m.x + R, m.y + R, w => { if (circleHitsRect(m.x, m.y, R, w)) damageWall(w, w.maxHp * 0.6, true); return false; });
@@ -793,6 +794,7 @@ function drawMeteors() {
 }
 
 function spawnWave() {
+  sfx('wave');
   wave++; waveAge = 0; lowT = 0;
   disguiseAgain();
   const bossWave = wave % D.bossEvery === 0;
@@ -927,6 +929,7 @@ function tryShoot(angle) {
   const p = player;
   const W = WEAPONS[p.weapon];
   if (p.ammo < W.cost - 1e-6 || p.fireCd > 0) return;
+  sfx('w_' + p.weapon);
   p.ammo = Math.max(0, p.ammo - W.cost); p.fireCd = W.gap / p.rateMul; p.reveal = 0.9; p.reloadPause = (CFG.reloadPause + W.gap) / p.rateMul; // pausen er længere end tiden til næste skud, så man ikke lader op midt i en skudserie
   const dmg = CFG.shotDamage * W.dmg * p.dmgMul * pDmg() * (buffs.damage > 0 ? 2 : 1);
   if (W.flame) { // flammekaster: skade på alle robotter i keglen foran dig
@@ -960,6 +963,7 @@ function tryShoot(angle) {
   if (p.weapon === 'sniper' || p.weapon === 'shotgun') shake = Math.max(shake, 3);
 }
 function robotShoot(r) {
+  sfx('eshot', r.x, r.y);
   const a = r.angle + rand(-0.08, 0.08), c = Math.cos(a), s = Math.sin(a);
   bullets.push({ x: r.x + c * 30, y: r.y + s * 30, vx: c * CFG.robotBulletSpeed, vy: s * CFG.robotBulletSpeed,
     life: CFG.robotRange * 1.15 / CFG.robotBulletSpeed, owner: 'r', dmg: CFG.robotDamage, ghost: r.type === 'ghost' });
@@ -983,6 +987,7 @@ function teleport(r) {
   r.fireCd = Math.min(r.fireCd, 0.35);
 }
 function hitRobot(r, b) {
+  sfx('hit', r.x, r.y);
   if (superCharge < CFG.superHits) {
     superCharge = Math.min(CFG.superHits, superCharge + (b.superGain || 1));
     if (superCharge >= CFG.superHits) { banner('SUPER KLAR!'); burst(player.x, player.y, '#ffd84a', 20, 200); }
@@ -1002,6 +1007,7 @@ function damageRobot(r, dmg, x, y, quiet) {
   if (!quiet) { r.flash = 0.12; burst(x, y, '#ffe1a0', 8, 220); }
   if (r.state !== 'chase') { r.lastSeen = { x: player.x, y: player.y }; r.searchT = 6; } // de hører hvor skuddet kom fra
   if (r.hp <= 0) {
+    sfx(r.type === 'boss' || r.type === 'ultra' ? 'bossdie' : r.type === 'mini' ? 'bigdie' : 'die', r.x, r.y);
     robots.splice(robots.indexOf(r), 1); kills++;
     if (MP && MP.role === 'host' && mpDmgFrom) mpSend({ t: 'unmask' }, MP.conns.get(mpDmgFrom)); else unmask(); // robot-skin: nu er du afsløret shake = Math.max(shake, 9);
     if (r.type === 'boss') {
@@ -1058,6 +1064,7 @@ function kitText(k, boss) {
   return parts.join(', ');
 }
 function shootSpread(r, n, spacing, speed, dmg, big, dist0) {
+  sfx(big ? 'eshot2' : 'eshot', r.x, r.y);
   for (let i = 0; i < n; i++) {
     const off = (i - (n - 1) / 2) * spacing, a = r.angle + off, c = Math.cos(a), sn = Math.sin(a);
     const side = (i - (n - 1) / 2) * 16;
@@ -1076,6 +1083,7 @@ function shootRing(r, n, speed, dmg, big) {
   burst(r.x, r.y, '#d94dff', 16, 200);
 }
 function shootHoming(r, k) {
+  sfx('homing', r.x, r.y);
   for (let i = 0; i < k; i++) {
     const a = r.angle + (i - (k - 1) / 2) * 0.7;
     bullets.push({ x: r.x + Math.cos(a) * (r.r + 8), y: r.y + Math.sin(a) * (r.r + 8), vx: Math.cos(a) * 200, vy: Math.sin(a) * 200,
@@ -1083,6 +1091,7 @@ function shootHoming(r, k) {
   }
 }
 function robotFlame(r, nx, ny, fa, range, dps, dt) {
+  sfx('eflame', r.x, r.y);
   for (let k = 0; k < 4; k++) { // dobbelt så store flammer, der ender ved rækkevidden (rækkevidden er uændret)
     const a = fa + rand(-0.25, 0.25), v = rand(600, 700) * range / 240, life = rand(0.45, 0.6);
     particles.push({ x: nx, y: ny, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life, max: life,
@@ -1107,6 +1116,7 @@ function spawnPowerup(forced) {
 }
 // admin = true: lægges oveni uden lofter, og tidsbegrænsede powerups forlænges i stedet for at starte forfra
 function applyPowerup(t, admin) {
+  sfx('pickup');
   const p = player;
   if (t === 'heal') p.hp = Math.min(p.maxHp, p.hp + CFG.healAmount);
   if (t === 'damage') buffs.damage = admin ? buffs.damage + CFG.buffTime : CFG.buffTime;
@@ -1160,6 +1170,7 @@ function updatePowerups(dt) {
 // ---------- Våben man kan samle op (sjældne) ----------
 // Våbenrækken: 1 = pistol, derefter i den rækkefølge man samler våben op
 function giveWeapon(t) {
+  sfx('weapon');
   const p = player;
   if (!p.inventory.includes(t)) p.inventory.push(t);
   p.weapon = t; if (D.autoReload) p.ammo = p.maxAmmo; p.fireCd = 0;
@@ -1294,7 +1305,7 @@ function fireHook() {
   if (d > CFG.hookRange) { tx = p.x + (tx - p.x) / d * CFG.hookRange; ty = p.y + (ty - p.y) / d * CFG.hookRange; }
   tx = clamp(tx, p.r, WORLD.w - p.r); ty = clamp(ty, p.r, WORLD.h - p.r);
   p.hook = { x: p.x, y: p.y, tx, ty, phase: 'fly', hit: new Set(), stuck: 0 };
-  p.hookCd = CFG.hookCd; p.reveal = 1;
+  p.hookCd = CFG.hookCd; p.reveal = 1; sfx('hook');
 }
 function updateHook(p, dt) { // true = man bliver trukket (almindelig styring er sat på pause)
   const h = p.hook; p.invuln = Math.max(p.invuln || 0, 0.15); // udødelig, mens man harpunerer
@@ -1325,7 +1336,7 @@ function updateHook(p, dt) { // true = man bliver trukket (almindelig styring er
     const sgn = side >= 0 ? 1 : -1;
     r.x = p.x + ux * Math.max(0, ahead) + -uy * sgn * (reach + 8); r.y = p.y + uy * Math.max(0, ahead) + ux * sgn * (reach + 8); pushOut(r);
     if (MP && MP.role === 'client' && r.id) MP.knock[r.id] = [Math.round(r.x), Math.round(r.y)];
-    if (!h.hit.has(r)) { h.hit.add(r); damageRobot(r, CFG.hookDmg * (p.skinDmg || 1), r.x, r.y); burst(r.x, r.y, '#f2c230', 22, 320); shake = Math.max(shake, 8); }
+    if (!h.hit.has(r)) { h.hit.add(r); sfx('hookhit', r.x, r.y); damageRobot(r, CFG.hookDmg * (p.skinDmg || 1), r.x, r.y); burst(r.x, r.y, '#f2c230', 22, 320); shake = Math.max(shake, 8); }
   }
   if (Math.random() < 0.7) particles.push({ x: p.x + rand(-8, 8), y: p.y + rand(-8, 8), vx: rand(-30, 30), vy: rand(-30, 30), life: 0.35, max: 0.35, color: ['#9fe8ff', '#ffffff', '#5fb8e8'][Math.floor(Math.random() * 3)], size: rand(2, 4), drag: 0.92 });
   return true;
@@ -1339,10 +1350,11 @@ function throwGrenade() {
   const d = Math.hypot(tx - p.x, ty - p.y), maxD = 460;
   if (d > maxD) { tx = p.x + (tx - p.x) / d * maxD; ty = p.y + (ty - p.y) / d * maxD; }
   tx = clamp(tx, 20, WORLD.w - 20); ty = clamp(ty, 20, WORLD.h - 20);
-  p.grenades--; p.reveal = 1;
+  p.grenades--; p.reveal = 1; sfx('throw');
   grenadesFlying.push({ x0: p.x, y0: p.y, tx, ty, t: 0, dur: 0.45 + Math.min(d, maxD) / 900 });
 }
 function explodeGrenade(x, y) {
+  sfx('boom', x, y);
   if (MP && MP.role === 'client') mpSend({ t: 'fx', k: 'g', x: Math.round(x), y: Math.round(y) });
   const R = CFG.grenadeRadius;
   shake = Math.max(shake, 20); rings.push({ x, y, t: 0, grenade: true });
@@ -1411,7 +1423,7 @@ function nearestRobot(x, y) {
 }
 function fireSuper() {
   if (state !== 'play' || superCharge < CFG.superHits) return;
-  superCharge = 0;
+  superCharge = 0; sfx('super');
   const p = player, tgt = nearestVisibleRobot() || nearestRobot(p.x, p.y);
   const a = tgt ? Math.atan2(tgt.y - p.y, tgt.x - p.x) : p.angle;
   p.angle = a; p.reveal = 1.2; shake = Math.max(shake, 5);
@@ -1439,6 +1451,7 @@ function updateMissiles(dt) {
   }
 }
 function explode(x, y) {
+  sfx('boom2', x, y);
   if (MP && MP.role === 'client') mpSend({ t: 'fx', k: 'm', x: Math.round(x), y: Math.round(y) });
   shake = Math.max(shake, 16);
   rings.push({ x, y, t: 0 });
@@ -1455,9 +1468,9 @@ function hitPlayer(dmg, quiet) {
   dmg *= (1 + CFG.dmgPerWave * (wave - 1)) * D.robotDmg;
   player.hp -= dmg; player.lastHit = time;
   if (quiet) { player.flash = Math.max(player.flash, 0.07); shake = Math.max(shake, 2); }
-  else { player.flash = 0.18; shake = Math.max(shake, 6); burst(player.x, player.y, '#ff6b6b', 8, 200); }
+  else { player.flash = 0.18; shake = Math.max(shake, 6); burst(player.x, player.y, '#ff6b6b', 8, 200); if (!player.remote) sfx('hurt'); }
   if (player.hp <= 0 && player.revives > 0) { // engle-skin: genopstår op til 5 gange med fuldt liv og 3 sek. beskyttelse
-    player.revives--; player.hp = player.maxHp; player.invuln = 3; player.flash = 0; shake = Math.max(shake, 10);
+    sfx('revive'); player.revives--; player.hp = player.maxHp; player.invuln = 3; player.flash = 0; shake = Math.max(shake, 10);
     burst(player.x, player.y, '#fff3b0', 40, 360); burst(player.x, player.y, '#ffffff', 25, 260); rings.push({ x: player.x, y: player.y, t: 0, small: true });
     popups.push({ x: player.x, y: player.y - 50, text: '😇 Genoplivet!', color: '#fff3b0', t: 0 }); return;
   }
@@ -1618,7 +1631,7 @@ function robotMove(r, dt) {
     // Savrobot: hugger når den rører dig
     if ((r.type === 'saw' || r.type === 'mini') && d < r.r + player.r + 8) {
       r.sawCd -= dt;
-      if (r.sawCd <= 0) { hitPlayer(CFG.sawDamage); r.sawCd = CFG.sawTick; burst(player.x, player.y, '#ffe9a8', 6, 260); }
+      if (r.sawCd <= 0) { sfx('saw', r.x, r.y); hitPlayer(CFG.sawDamage); r.sawCd = CFG.sawTick; burst(player.x, player.y, '#ffe9a8', 6, 260); }
     } else if (r.type === 'saw' || r.type === 'mini') r.sawCd = 0;
 
     if (sees && r.type === 'saw') {
@@ -1703,7 +1716,7 @@ function robotMove(r, dt) {
       if (k.stomp) {
         r.stompCd -= dt;
         if (r.stompCd <= 0 && d < 200) {
-          r.stompCd = 5; shake = Math.max(shake, 12); rings.push({ x: r.x, y: r.y, t: 0, small: true });
+          r.stompCd = 5; shake = Math.max(shake, 12); sfx('stomp', r.x, r.y); rings.push({ x: r.x, y: r.y, t: 0, small: true });
           burst(r.x, r.y, '#c9b8e6', 30, 380);
           hitPlayer(450);
           const ux = (player.x - r.x) / d, uy = (player.y - r.y) / d; player.x += ux * 90; player.y += uy * 90; pushOut(player, true);
@@ -1786,14 +1799,14 @@ function updateBullets(dt) {
     }
     b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
     let dead = b.life <= 0 || b.x < 0 || b.y < 0 || b.x > WORLD.w || b.y > WORLD.h;
-    if (!dead && !b.seek && !b.thru) for (const w of walls) if (segHitsRect(ox, oy, b.x, b.y, w)) { dead = true; burst(ox, oy, '#cfd6df', 5, 140); break; }
+    if (!dead && !b.seek && !b.thru) for (const w of walls) if (segHitsRect(ox, oy, b.x, b.y, w)) { dead = true; burst(ox, oy, '#cfd6df', 5, 140); sfx('ric', ox, oy); break; }
     if (!dead && b.plasma && b.owner !== 'v') {
       builtInBox(Math.min(ox, b.x) - 12, Math.min(oy, b.y) - 12, Math.max(ox, b.x) + 12, Math.max(oy, b.y) + 12, w => {
         if (!b.hitWalls[w.i] && segHitsBox(ox, oy, b.x, b.y, w.x - 12, w.y - 12, w.x + w.w + 12, w.y + w.h + 12)) { b.hitWalls[w.i] = 1; damageWall(w, w.maxHp * 0.7, true); burst(b.x, b.y, '#7dffcf', 8, 180); }
         return false; });
     } else if (!dead && b.owner !== 'p' && b.owner !== 'v') {
       const hw = builtInBox(Math.min(ox, b.x), Math.min(oy, b.y), Math.max(ox, b.x), Math.max(oy, b.y), w => segHitsRect(ox, oy, b.x, b.y, w));
-      if (hw) { damageWall(hw, b.dmg); dead = true; burst(ox, oy, '#c9a06a', 5, 140); }
+      if (hw) { damageWall(hw, b.dmg); dead = true; burst(ox, oy, '#c9a06a', 5, 140); sfx('ric', ox, oy); }
     }
     if (!dead) {
       if (b.owner === 'p') {
@@ -2593,7 +2606,7 @@ function pause() {
 }
 function resume() { state = 'play'; overlay.classList.add('hidden'); last = performance.now(); }
 function gameOver() {
-  state = 'over'; mouse.down = false;
+  state = 'over'; mouse.down = false; sfx('pdie');
   const rekord = kills > best; if (rekord) { best = kills; try { localStorage.setItem('robotjagt_best', String(best)); } catch (e) {} }
   lastRekord = rekord;
   setTimeout(gameOverPanel, 900);
@@ -2838,7 +2851,7 @@ function disguiseAgain() { // robot-skin: ny bølge = forklædt igen, indtil man
 function unmask() {
   const p = player; if (!p.disguise) return;
   if (p.hidden) { if (time - (p.bushNote || -9) > 3) { p.bushNote = time; popups.push({ x: p.x, y: p.y - 50, text: '🌿 Ingen så, hvem der skød', color: '#6fe39a', t: 0 }); } return; } // skudt fra en busk: stadig forklædt
-  p.disguise = false; shake = Math.max(shake, 10); burst(p.x, p.y, '#ff4a4a', 30, 320); rings.push({ x: p.x, y: p.y, t: 0, small: true });
+  p.disguise = false; sfx('alarm'); shake = Math.max(shake, 10); burst(p.x, p.y, '#ff4a4a', 30, 320); rings.push({ x: p.x, y: p.y, t: 0, small: true });
   popups.push({ x: p.x, y: p.y - 50, text: '🚨 Robotterne har opdaget dig!', color: '#ff6b5b', t: -0.4 });
 }
 function openCodes() {
@@ -3284,6 +3297,7 @@ function mpBuffFx(type, x, y, by) {
   popups.push({ x: player.x, y: player.y - 40, text: P.name + (by && by !== mpMyName() ? ' (fra ' + by + ')' : ''), color: P.color, t: 0 });
 }
 function mpBoomFx(k, x, y) { // en holdkammerats granat eller missil – kun det, man ser
+  sfx(k === 'g' ? 'boom' : 'boom2', x, y);
   if (k === 'g') { rings.push({ x, y, t: 0, grenade: true }); burst(x, y, '#ffdf6b', 40, 700); burst(x, y, '#ff7a2a', 40, 560); burst(x, y, '#5a5f66', 24, 420); }
   else { rings.push({ x, y, t: 0 }); burst(x, y, '#ffdf6b', 30, 520); burst(x, y, '#ff7a2a', 30, 420); }
 }
@@ -3333,11 +3347,18 @@ function mpSendSnaps() {
 
 // ---------- Klient: verden fra værten ----------
 function mpApplySnap(s) {
-  if (s.wave > wave && wave > 0) disguiseAgain(); // ny bølge hos værten
+  if (s.wave > wave && wave > 0) { disguiseAgain(); sfx('wave'); } // ny bølge hos værten
   MP.nextIn = s.nw;
   wave = s.wave; kills = s.kills;
   if (s.bt !== bannerText || s.bT > bannerT + 0.3) { bannerText = s.bt; bannerT = s.bT; }
   const oldR = new Map(robots.map(r => [r.id, r]));
+  { // lyde hos klienten: robotter der døde, og robotter der skød
+    const ids = new Set(s.rb.map(n => n.id)); let n = 0;
+    for (const [id, r] of oldR) if (!ids.has(id) && n++ < 4) sfx(r.type === 'boss' || r.type === 'ultra' ? 'bossdie' : r.type === 'mini' ? 'bigdie' : 'die', r.x, r.y);
+    const en = s.bl.filter(a => !(a[4] & 16)), last = en[en.length - 1];
+    if (en.length > (MP.lastEN || 0) && last) sfx(last[4] & 1 ? 'plasma' : 'eshot', last[0], last[1]);
+    MP.lastEN = en.length;
+  }
   robots = s.rb.map(n => {
     const o = oldR.get(n.id);
     if (o) { const ox = o.x, oy = o.y; Object.assign(o, n); o.tx = n.x; o.ty = n.y; o.x = ox; o.y = oy; return o; }
@@ -3433,7 +3454,7 @@ function mpClientPickups() {
 
 // ---------- Nede, genoplivning og friendly fire ----------
 function mpDown() {
-  const p = player; p.hp = 0; p.dead = true; p.flash = 0; mouse.down = false;
+  const p = player; p.hp = 0; p.dead = true; p.flash = 0; mouse.down = false; sfx('pdie');
   burst(p.x, p.y, '#3d8bff', 30, 300); shake = Math.max(shake, 12);
   popups.push({ x: p.x, y: p.y - 50, text: '💀 Du er nede! En holdkammerat kan genoplive dig', color: '#ffb0a0', t: -0.6 });
 }
@@ -3452,7 +3473,7 @@ function mpReviveCheck(dt) {
   }
 }
 function mpRevived(by) {
-  const p = player; if (!p.dead) return;
+  const p = player; if (!p.dead) return; sfx('revive');
   p.dead = false; p.hp = p.maxHp * 0.5; p.invuln = 2; p.lastHit = time;
   burst(p.x, p.y, '#7dffcf', 36, 320); rings.push({ x: p.x, y: p.y, t: 0, small: true });
   popups.push({ x: p.x, y: p.y - 50, text: '❤ Genoplivet af ' + (by || 'en holdkammerat') + '!', color: '#7dffcf', t: 0 });
@@ -3559,7 +3580,7 @@ function ambBuild() {
   const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return false;
   const c = AMB.ctx = new AC();
   const master = AMB.master = c.createGain(); master.gain.value = 0;
-  const comp = c.createDynamicsCompressor(); master.connect(comp); comp.connect(c.destination);
+  const comp = AMB.comp = c.createDynamicsCompressor(); master.connect(comp); comp.connect(c.destination);
   const rev = c.createConvolver(); rev.buffer = ambImpulse(c, 5, 2.4);
   const revG = c.createGain(); revG.gain.value = 0.7; rev.connect(revG); revG.connect(master);
   const dry = c.createGain(); dry.gain.value = 0.5; dry.connect(master);
@@ -3645,6 +3666,93 @@ addEventListener('keydown', e => {
 });
 document.getElementById('sndbtn').textContent = AMB.on ? '🔊' : '🔇';
 document.getElementById('sndbtn').onclick = e => { e.stopPropagation(); ambToggle(); };
+
+// =====================================================================
+// 🔊 Lydeffekter – laves direkte i browseren (Web Audio), ingen lydfiler
+// sfx(navn, x, y): lyde fra verden bliver svagere langt væk og kommer fra venstre/højre
+// =====================================================================
+const SFX = { out: null, noise: null, last: {}, vol: 0.55 };
+const SFX_GAP = { w_minigun: 0.045, w_flamer: 0.09, w_rifle: 0.06, hit: 0.03, ric: 0.04, eshot: 0.05, eflame: 0.12, hurt: 0.08, die: 0.03, saw: 0.12, pickup: 0.05, hookhit: 0.05, burnhit: 0.2 };
+function sfxInit() {
+  const c = AMB.ctx; if (!c || SFX.out) return;
+  SFX.out = c.createGain(); SFX.out.gain.value = SFX.vol; SFX.out.connect(AMB.comp || c.destination);
+  const b = c.createBuffer(1, c.sampleRate, c.sampleRate), d = b.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  SFX.noise = b;
+}
+function sfxDest(x, y) { // retning og afstand i forhold til din figur
+  const c = AMB.ctx, g = c.createGain();
+  let v = 1;
+  if (x !== undefined) {
+    const d = Math.hypot(x - player.x, y - player.y); v = Math.max(0.1, 1 - d / 1100);
+    if (c.createStereoPanner) { const pn = c.createStereoPanner(); pn.pan.value = Math.max(-0.9, Math.min(0.9, (x - player.x) / 700)); g.connect(pn); pn.connect(SFX.out); }
+    else g.connect(SFX.out);
+  } else g.connect(SFX.out);
+  g.gain.value = v; return g;
+}
+function sTone(dest, t, type, f0, f1, dur, vol, attack = 0.004) {
+  const c = AMB.ctx, o = c.createOscillator(), g = c.createGain();
+  o.type = type; o.frequency.setValueAtTime(f0, t); if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + attack); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(dest); o.start(t); o.stop(t + dur + 0.02);
+}
+function sNoise(dest, t, ftype, f0, f1, q, dur, vol, attack = 0.002) {
+  const c = AMB.ctx, s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+  s.buffer = SFX.noise; s.playbackRate.value = 0.8 + Math.random() * 0.4;
+  f.type = ftype; f.Q.value = q; f.frequency.setValueAtTime(f0, t); if (f1 !== f0) f.frequency.exponentialRampToValueAtTime(Math.max(30, f1), t + dur);
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + attack); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  s.connect(f); f.connect(g); g.connect(dest); s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.02);
+}
+const SFX_DEF = {
+  // dine våben
+  w_pistol:  (d, t) => { sNoise(d, t, 'bandpass', 2400, 900, 1.2, 0.09, 0.5); sTone(d, t, 'square', 260, 70, 0.08, 0.18); },
+  w_rifle:   (d, t) => { sNoise(d, t, 'bandpass', 3000, 1100, 1.4, 0.07, 0.45); sTone(d, t, 'square', 320, 90, 0.06, 0.14); },
+  w_minigun: (d, t) => { sNoise(d, t, 'bandpass', 3400, 1500, 1.5, 0.045, 0.32); sTone(d, t, 'square', 200, 90, 0.035, 0.08); },
+  w_shotgun: (d, t) => { sNoise(d, t, 'lowpass', 2200, 300, 0.7, 0.28, 0.85); sTone(d, t, 'sine', 120, 40, 0.22, 0.6); },
+  w_sniper:  (d, t) => { sNoise(d, t, 'highpass', 4000, 2000, 0.7, 0.05, 0.7); sNoise(d, t + 0.01, 'lowpass', 1400, 120, 0.7, 0.55, 0.45); sTone(d, t, 'sine', 95, 35, 0.35, 0.7); },
+  w_flamer:  (d, t) => { sNoise(d, t, 'bandpass', 700, 1100, 0.6, 0.16, 0.35, 0.03); },
+  super:     (d, t) => { sNoise(d, t, 'bandpass', 400, 3000, 1, 0.5, 0.6, 0.05); sTone(d, t, 'sawtooth', 120, 520, 0.45, 0.15, 0.04); },
+  throw:     (d, t) => { sNoise(d, t, 'bandpass', 600, 1800, 2, 0.22, 0.6, 0.05); },
+  hook:      (d, t) => { sNoise(d, t, 'bandpass', 900, 3500, 3, 0.18, 0.4); sTone(d, t, 'triangle', 500, 1400, 0.12, 0.12); },
+  hookhit:   (d, t) => { sTone(d, t, 'sine', 160, 50, 0.25, 0.8); sNoise(d, t, 'lowpass', 1800, 200, 0.7, 0.25, 0.7); sTone(d, t, 'square', 900, 600, 0.08, 0.15); },
+  build:     (d, t) => { sTone(d, t, 'triangle', 210, 120, 0.1, 0.55); sNoise(d, t, 'lowpass', 900, 300, 1, 0.08, 0.35); },
+  wallbreak: (d, t) => { sNoise(d, t, 'bandpass', 700, 200, 0.8, 0.35, 0.7); sTone(d, t, 'triangle', 140, 60, 0.2, 0.4); },
+  // robotter
+  eshot:     (d, t) => { sTone(d, t, 'square', 720, 260, 0.08, 0.13); sNoise(d, t, 'bandpass', 2000, 900, 2, 0.06, 0.18); },
+  eshot2:    (d, t) => { sTone(d, t, 'sawtooth', 300, 90, 0.18, 0.22); sNoise(d, t, 'lowpass', 1600, 300, 1, 0.16, 0.4); },
+  plasma:    (d, t) => { sTone(d, t, 'sine', 260, 900, 0.3, 0.35, 0.02); sTone(d, t, 'sine', 265, 910, 0.3, 0.25, 0.02); },
+  homing:    (d, t) => { sNoise(d, t, 'bandpass', 500, 1600, 1.5, 0.4, 0.4, 0.05); },
+  eflame:    (d, t) => { sNoise(d, t, 'bandpass', 600, 900, 0.6, 0.2, 0.25, 0.04); },
+  saw:       (d, t) => { const c = AMB.ctx, o = c.createOscillator(), g = c.createGain(); o.type = 'sawtooth'; o.frequency.setValueAtTime(320, t); o.frequency.linearRampToValueAtTime(380, t + 0.14);
+               g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.16, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16); o.connect(g); g.connect(d); o.start(t); o.stop(t + 0.18);
+               sNoise(d, t, 'highpass', 3000, 3000, 0.7, 0.12, 0.2); },
+  stomp:     (d, t) => { sTone(d, t, 'sine', 90, 28, 0.6, 1); sNoise(d, t, 'lowpass', 600, 80, 0.7, 0.5, 0.8); },
+  hit:       (d, t) => { const f = 700 + Math.random() * 300; sTone(d, t, 'square', f, f * 0.8, 0.06, 0.07); sTone(d, t, 'square', f * 1.47, f * 1.2, 0.05, 0.045); sNoise(d, t, 'highpass', 2500, 2500, 0.7, 0.03, 0.1); },
+  burnhit:   (d, t) => { sNoise(d, t, 'highpass', 1800, 1800, 0.7, 0.08, 0.12); },
+  die:       (d, t) => { sNoise(d, t, 'lowpass', 2600, 160, 0.8, 0.5, 0.75); sTone(d, t, 'sine', 140, 40, 0.4, 0.6); sTone(d, t + 0.02, 'square', 420, 120, 0.15, 0.1); },
+  bigdie:    (d, t) => { sNoise(d, t, 'lowpass', 2400, 90, 0.8, 1.0, 1); sTone(d, t, 'sine', 110, 28, 0.9, 0.9); sNoise(d, t + 0.15, 'bandpass', 900, 200, 1, 0.6, 0.4); },
+  bossdie:   (d, t) => { for (let k = 0; k < 4; k++) { sNoise(d, t + k * 0.22, 'lowpass', 2400, 80, 0.8, 0.9, 1); sTone(d, t + k * 0.22, 'sine', 120 - k * 15, 26, 0.8, 0.9); } },
+  // eksplosioner
+  boom:      (d, t) => { sNoise(d, t, 'lowpass', 2200, 70, 0.7, 1.2, 1.2); sTone(d, t, 'sine', 85, 25, 0.9, 1.1); },
+  boom2:     (d, t) => { sNoise(d, t, 'lowpass', 2600, 90, 0.7, 0.8, 1); sTone(d, t, 'sine', 100, 30, 0.6, 0.9); },
+  // dig
+  ric:       (d, t) => { const f = 1800 + Math.random() * 1600; sTone(d, t, 'triangle', f, f * 0.6, 0.06, 0.06); sNoise(d, t, 'highpass', 3500, 3500, 0.7, 0.025, 0.12); },
+  hurt:      (d, t) => { sTone(d, t, 'sine', 200, 70, 0.16, 0.7); sNoise(d, t, 'lowpass', 1200, 200, 0.7, 0.12, 0.4); },
+  pdie:      (d, t) => { sTone(d, t, 'sawtooth', 300, 40, 1.2, 0.25, 0.02); sNoise(d, t, 'lowpass', 1600, 60, 0.7, 1.0, 0.8); },
+  revive:    (d, t) => { [523, 659, 784, 1047].forEach((f, i) => sTone(d, t + i * 0.08, 'sine', f, f, 0.35, 0.22)); },
+  alarm:     (d, t) => { for (let k = 0; k < 3; k++) sTone(d, t + k * 0.16, 'square', 880, 660, 0.13, 0.22); },
+  pickup:    (d, t) => { [660, 880, 1320].forEach((f, i) => sTone(d, t + i * 0.055, 'sine', f, f, 0.16, 0.22)); },
+  weapon:    (d, t) => { sTone(d, t, 'square', 330, 330, 0.08, 0.2); sTone(d, t + 0.08, 'square', 495, 495, 0.14, 0.2); sNoise(d, t, 'bandpass', 2500, 2500, 3, 0.08, 0.2); },
+  wave:      (d, t) => { sTone(d, t, 'sawtooth', 110, 110, 1.3, 0.12, 0.25); sTone(d, t, 'sawtooth', 164.8, 164.8, 1.3, 0.09, 0.25); sTone(d, t, 'sine', 55, 55, 1.4, 0.4, 0.2); }
+};
+function sfx(name, x, y) {
+  if (!AMB.on || !AMB.ctx || AMB.ctx.state !== 'running') return;
+  sfxInit(); const def = SFX_DEF[name]; if (!def) return;
+  const now = AMB.ctx.currentTime, gap = SFX_GAP[name] ?? 0.02;
+  if (now - (SFX.last[name] ?? -9) < gap) return; // samme lyd ikke for tæt – ellers bliver det støj
+  SFX.last[name] = now;
+  try { def(sfxDest(x, y), now + 0.005); } catch (e) {}
+}
 
 let last = performance.now();
 // En fejl i ét billede må ikke stoppe hele spillet: næste billede bestilles først, og fejl fanges og vises kort.
