@@ -545,7 +545,7 @@ function attackWall(r, dt) {
   const wx = w.x + GS / 2, wy = w.y + GS / 2, d = Math.hypot(wx - r.x, wy - r.y);
   r.angle = Math.atan2(wy - r.y, wx - r.x);
   if (r.type === 'saw') {
-    if (d < r.r + GS * 0.5 + 14) { r.sawCd -= dt; if (r.sawCd <= 0) { damageWall(w, w.maxHp / CFG.sawHitsPerWall + 0.01, true); r.sawCd = CFG.sawTick; burst(wx, wy, '#ffe9a8', 5, 200); } }
+    if (d < r.r + GS * 0.5 + 14) { r.sawCd -= dt; if (r.sawCd <= 0) { damageWall(w, CFG.wallHp / CFG.sawHitsPerWall + 0.01, true); r.sawCd = CFG.sawTick; burst(wx, wy, '#ffe9a8', 5, 200); } }
     return;
   }
   if (r.type === 'flame') {
@@ -666,7 +666,7 @@ function updateUltra(r, dt, d) {
   if (d > 140) navigate(r, player.x, player.y, step); else { r.wallTarget = null; r.angle = Math.atan2(player.y - r.y, player.x - r.x); }
   if (r.wallTarget && builtAt[r.wallTarget.i]) {
     const w = r.wallTarget;
-    if (Math.hypot(w.x + GS / 2 - r.x, w.y + GS / 2 - r.y) < r.r + GS * 0.6 + 10) { damageWall(w, w.maxHp * 0.6 * dt, true); if (Math.random() < 0.3) burst(w.x + GS / 2, w.y + GS / 2, '#c9a06a', 2, 150); }
+    if (Math.hypot(w.x + GS / 2 - r.x, w.y + GS / 2 - r.y) < r.r + GS * 0.6 + 10) { damageWall(w, CFG.wallHp * 0.6 * dt, true); if (Math.random() < 0.3) burst(w.x + GS / 2, w.y + GS / 2, '#c9a06a', 2, 150); }
   }
   // 2 save – en på hver side
   for (let k = 0; k < 2; k++) {
@@ -674,7 +674,7 @@ function updateUltra(r, dt, d) {
     const sx = r.x + Math.cos(a) * (r.r + 20), sy = r.y + Math.sin(a) * (r.r + 20);
     r.sawCds[k] -= dt;
     if (Math.hypot(player.x - sx, player.y - sy) < player.r + 26 && r.sawCds[k] <= 0) { hitPlayer(CFG.ultraSawDamage); r.sawCds[k] = CFG.sawTick; burst(player.x, player.y, '#ffe9a8', 6, 260); }
-    builtInBox(sx - 30, sy - 30, sx + 30, sy + 30, w => { damageWall(w, w.maxHp * 0.8 * dt, true); return false; });
+    builtInBox(sx - 30, sy - 30, sx + 30, sy + 30, w => { damageWall(w, CFG.wallHp * 0.8 * dt, true); return false; });
   }
   // 3 flammekastere
   if (d < CFG.ultraFlameRange + 60) {
@@ -741,7 +741,7 @@ function updateMeteors(dt) {
       shake = Math.max(shake, 8); rings.push({ x: m.x, y: m.y, t: 0.15, meteor: true }); sfx('boom2', m.x, m.y);
       burst(m.x, m.y, '#ff7a2a', 22, 320); burst(m.x, m.y, '#5a4a40', 14, 220); burst(m.x, m.y, '#ffdf6b', 8, 160);
       for (const t of mpAll()) if (!t.dead && !t.disguise && Math.hypot(t.x - m.x, t.y - m.y) < R + t.r) mpHit(t, CFG.ultraMeteorDamage);
-      builtInBox(m.x - R, m.y - R, m.x + R, m.y + R, w => { if (circleHitsRect(m.x, m.y, R, w)) damageWall(w, w.maxHp * 0.6, true); return false; });
+      builtInBox(m.x - R, m.y - R, m.x + R, m.y + R, w => { if (circleHitsRect(m.x, m.y, R, w)) damageWall(w, CFG.wallHp * 0.6, true); return false; });
     }
   }
 }
@@ -1831,7 +1831,7 @@ function updateBullets(dt) {
     if (!dead && !b.seek && !b.thru) for (const w of walls) if (segHitsRect(ox, oy, b.x, b.y, w)) { dead = true; burst(ox, oy, '#cfd6df', 5, 140); sfx('ric', ox, oy); break; }
     if (!dead && b.plasma && b.owner !== 'v') {
       builtInBox(Math.min(ox, b.x) - 12, Math.min(oy, b.y) - 12, Math.max(ox, b.x) + 12, Math.max(oy, b.y) + 12, w => {
-        if (!b.hitWalls[w.i] && segHitsBox(ox, oy, b.x, b.y, w.x - 12, w.y - 12, w.x + w.w + 12, w.y + w.h + 12)) { b.hitWalls[w.i] = 1; damageWall(w, w.maxHp * 0.7, true); burst(b.x, b.y, '#7dffcf', 8, 180); }
+        if (!b.hitWalls[w.i] && segHitsBox(ox, oy, b.x, b.y, w.x - 12, w.y - 12, w.x + w.w + 12, w.y + w.h + 12)) { b.hitWalls[w.i] = 1; damageWall(w, CFG.wallHp * 0.7, true); burst(b.x, b.y, '#7dffcf', 8, 180); }
         return false; });
     } else if (!dead && b.owner !== 'p' && b.owner !== 'v') {
       const hw = builtInBox(Math.min(ox, b.x), Math.min(oy, b.y), Math.max(ox, b.x), Math.max(oy, b.y), w => segHitsRect(ox, oy, b.x, b.y, w));
