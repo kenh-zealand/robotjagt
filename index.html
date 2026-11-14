@@ -110,6 +110,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.65', d: '14-11-2026', items: ['Savrobotter smadrer bygninger 200 gange langsommere (ca. 8 minutter om én væg i stedet for 2,5 sekunder)'] },
   { v: '1.64', d: '14-11-2026', items: ['🎵 Musik: mørk synth med bas, trommer og arpeggio – rolig i menuen og kraftigere, jo flere robotter der er, helt vild ved bosser', 'Slå musikken til og fra med N eller 🎵-knappen nederst til venstre', 'Robotterne har fået egne lyde: servoer, skridt (tunge for minibosser og bosser), summende save og små bip', 'Bip-alarm når en robot opdager dig, og en lyd når robotter teleporterer', 'Klik-lyd på alle knapper'] },
   { v: '1.63', d: '14-11-2026', items: ['🔊 Lydeffekter til alt: hvert våben har sin egen lyd, robotternes skud, plasma, missiler, flammer, save og stamp', 'Lyd når robotter bliver ramt og dør (større brag for minibosser og bosser), når skud rammer vægge, når du bliver ramt, og ved eksplosioner', 'Lyd ved pickups, våben, granatkast, super, byggeri, vægge der går i stykker, ny bølge og genoplivning', 'Lyde langt væk er svagere og kommer fra venstre eller højre – M slår al lyd til og fra'] },
   { v: '1.62', d: '14-11-2026', items: ['Når der er 10 eller færre robotter tilbage, starter næste bølge automatisk efter 30 sekunder – så man ikke kan blive og samle powerups i det uendelige', 'En bølge varer højst 7 minutter – derefter starter den næste uanset hvad', 'Nedtællingen til næste bølge vises øverst til højre'] },
@@ -214,7 +215,7 @@ const CFG = {
   sawSpeed: 185,        // savrobot: hurtig, skal helt tæt på
   sawDamage: 250,       // pr. hug
   sawTick: 0.25,
-  sawHitsPerWall: 10,   // en savrobot skal hugge 10 gange for at ødelægge en bygget væg        // hug hvert 0,25 sek. = 1000 skade pr. sek.
+  sawHitsPerWall: 2000, // en savrobot skal hugge 2000 gange (ca. 8 min.) for at ødelægge en bygget væg – 200 gange langsommere end før
   flameRange: 240,      // flammer fra minibossens flammekaster
   flameRobotRange: 240, // flammerobot: rækkevidde (flammerne er tegnet, så de passer til den)
   bossWallSmash: 108,   // bosser smadrer dine vægge inden for 3 spillerbredder fra kanten af bossen
