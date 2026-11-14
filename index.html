@@ -32,6 +32,7 @@
   #credit{font-size:12px;font-weight:700;color:#c9d3df;background:rgba(13,16,20,.72);border:1px solid #33404f;border-radius:8px;padding:5px 10px}
   #ver{margin:0;padding:5px 10px;font-size:12px;font-weight:700;background:rgba(13,16,20,.72);color:#c9d3df;border:1px solid #33404f;border-radius:8px}
   #ver:hover{color:#fff}
+  #musbtn{margin:0;padding:4px 8px;font-size:13px;background:rgba(13,16,20,.72);color:#c9d3df;border:1px solid #33404f;border-radius:8px;line-height:1}
   #sndbtn{margin:0;padding:4px 8px;font-size:13px;background:rgba(13,16,20,.72);color:#c9d3df;border:1px solid #33404f;border-radius:8px;line-height:1}
   .menu-btns{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:6px 0 4px}
   .menu-btns button{margin:0}
@@ -100,7 +101,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="foot"><button id="ver" title="Se ændringer"></button><button id="sndbtn" title="Stemningslyd til/fra (M)">🔊</button><span id="credit">Made by agent7329</span></div>
+<div id="foot"><button id="ver" title="Se ændringer"></button><button id="sndbtn" title="Al lyd til/fra (M)">🔊</button><button id="musbtn" title="Musik til/fra (N)">🎵</button><span id="credit">Made by agent7329</span></div>
 <div id="overlay"><div class="panel" id="panel"></div></div>
 
 <script>
@@ -109,6 +110,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.64', d: '14-11-2026', items: ['🎵 Musik: mørk synth med bas, trommer og arpeggio – rolig i menuen og kraftigere, jo flere robotter der er, helt vild ved bosser', 'Slå musikken til og fra med N eller 🎵-knappen nederst til venstre', 'Robotterne har fået egne lyde: servoer, skridt (tunge for minibosser og bosser), summende save og små bip', 'Bip-alarm når en robot opdager dig, og en lyd når robotter teleporterer', 'Klik-lyd på alle knapper'] },
   { v: '1.63', d: '14-11-2026', items: ['🔊 Lydeffekter til alt: hvert våben har sin egen lyd, robotternes skud, plasma, missiler, flammer, save og stamp', 'Lyd når robotter bliver ramt og dør (større brag for minibosser og bosser), når skud rammer vægge, når du bliver ramt, og ved eksplosioner', 'Lyd ved pickups, våben, granatkast, super, byggeri, vægge der går i stykker, ny bølge og genoplivning', 'Lyde langt væk er svagere og kommer fra venstre eller højre – M slår al lyd til og fra'] },
   { v: '1.62', d: '14-11-2026', items: ['Når der er 10 eller færre robotter tilbage, starter næste bølge automatisk efter 30 sekunder – så man ikke kan blive og samle powerups i det uendelige', 'En bølge varer højst 7 minutter – derefter starter den næste uanset hvad', 'Nedtællingen til næste bølge vises øverst til højre'] },
   { v: '1.61', d: '14-11-2026', items: ['🎵 Stemningslyd: mørk, rolig drone med vind og fjerne metalklange', 'Lyden bliver mere anspændt, jo flere robotter der er – og får et dunkende hjerteslag, når der er en boss', 'Slå lyden til og fra med M eller 🔊-knappen nederst til venstre (den husker dit valg)'] },
@@ -970,6 +972,7 @@ function robotShoot(r) {
   if (r.type !== 'ghost') burst(r.x + c * 32, r.y + s * 32, '#ff7a6b', 5, 140, a, 0.6);
 }
 function teleport(r) {
+  sfx('tele', r.x, r.y);
   const ox = r.x, oy = r.y, ref = r.lastSeen || player;
   let spot = null;
   for (let i = 0; i < 80 && !spot; i++) {
@@ -1635,12 +1638,12 @@ function robotMove(r, dt) {
     } else if (r.type === 'saw' || r.type === 'mini') r.sawCd = 0;
 
     if (sees && r.type === 'saw') {
-      if (r.state !== 'chase') r.alertT = 1;
+      if (r.state !== 'chase') r.alertT = 1; sfx('spot', r.x, r.y);
       r.state = 'chase'; r.lastSeen = { x: player.x, y: player.y }; r.searchT = 6;
       r.angle = Math.atan2(player.y - r.y, player.x - r.x);
       if (d > r.r + player.r + 2) moveDir(r, player.x - r.x, player.y - r.y, CFG.sawSpeed * dt);
     } else if (sees && r.type === 'flame') {
-      if (r.state !== 'chase') { r.alertT = 1; r.fireCd = 0.5; }
+      if (r.state !== 'chase') { r.alertT = 1; sfx('spot', r.x, r.y); r.fireCd = 0.5; }
       r.state = 'chase'; r.lastSeen = { x: player.x, y: player.y }; r.searchT = 6;
       const ux = (player.x - r.x) / d, uy = (player.y - r.y) / d;
       r.angle = Math.atan2(uy, ux);
@@ -1660,7 +1663,7 @@ function robotMove(r, dt) {
         hitPlayer(CFG.flameDps * dt, true);
       }
     } else if (sees && r.type === 'mini') {
-      if (r.state !== 'chase') { r.alertT = 1; r.fireCd = Math.max(r.fireCd, 0.6); }
+      if (r.state !== 'chase') { r.alertT = 1; sfx('spot', r.x, r.y); r.fireCd = Math.max(r.fireCd, 0.6); }
       r.state = 'chase'; r.lastSeen = { x: player.x, y: player.y }; r.searchT = 8;
       const ux = (player.x - r.x) / d, uy = (player.y - r.y) / d;
       r.angle = Math.atan2(uy, ux);
@@ -1689,7 +1692,7 @@ function robotMove(r, dt) {
       if (k.ring) { r.ringCd -= dt; if (r.ringCd <= 0) { shootRing(r, k.ring, 330, CFG.robotDamage * 0.8, false); r.ringCd = 4; } }
       if (k.homing) { r.homingCd -= dt; if (r.homingCd <= 0) { shootHoming(r, k.homing); r.homingCd = 5; } }
     } else if (sees && r.type === 'boss') {
-      if (r.state !== 'chase') { r.alertT = 1; r.fireCd = Math.max(r.fireCd, 0.8); }
+      if (r.state !== 'chase') { r.alertT = 1; sfx('spot', r.x, r.y); r.fireCd = Math.max(r.fireCd, 0.8); }
       r.state = 'chase'; r.lastSeen = { x: player.x, y: player.y }; r.searchT = 30;
       // drejer langsomt mod spilleren
       let diff = Math.atan2(player.y - r.y, player.x - r.x) - r.angle; diff = Math.atan2(Math.sin(diff), Math.cos(diff));
@@ -1723,7 +1726,7 @@ function robotMove(r, dt) {
         }
       }
     } else if (sees) {
-      if (r.state !== 'chase') { r.alertT = 1; r.fireCd = Math.max(r.fireCd, 0.45); }
+      if (r.state !== 'chase') { r.alertT = 1; sfx('spot', r.x, r.y); r.fireCd = Math.max(r.fireCd, 0.45); }
       r.state = 'chase'; r.lastSeen = { x: player.x, y: player.y }; r.searchT = 6;
       const ux = (player.x - r.x) / d, uy = (player.y - r.y) / d;
       r.angle = Math.atan2(uy, ux);
@@ -2511,7 +2514,7 @@ function menu() {
       <li><b>Sigt:</b> med musen</li>
       <li><b>Skyd:</b> mellemrum eller venstreklik – skyder der, hvor du sigter</li>
       <li><b>Byg en væg:</b> højreklik (hold og træk for at bygge flere)</li>
-      <li><b>Super:</b> Q · <b>Granat:</b> F (kastes hen hvor musen peger) · <b>Pause:</b> P eller Esc · <b>Admin:</b> E · <b>Lyd:</b> M</li>
+      <li><b>Super:</b> Q · <b>Granat:</b> F (kastes hen hvor musen peger) · <b>Pause:</b> P eller Esc · <b>Admin:</b> E · <b>Lyd:</b> M · <b>Musik:</b> N</li>
       <li><b>Skift våben:</b> tast 1 = pistol, 2, 3 … = våbnene i den rækkefølge du samlede dem op (eller klik på dem nederst)</li>`;
   const portrait = TOUCH && VH > VW;
   panel.innerHTML = `<h1>Robotjagt</h1><p>Overlev så mange bølger af robotter som muligt. <span style="color:#93a0b0">· v${VERSION}</span></p>
@@ -3649,7 +3652,7 @@ function ambTick(dt) {
   if (state === 'play') target = player.dead ? 0.1 : Math.min(1, 0.25 + robots.length * 0.05 + (boss ? 0.45 : 0));
   else if (state === 'over') target = 0.05;
   AMB.lvl += (target - AMB.lvl) * Math.min(1, dt * 0.6); const L = AMB.lvl;
-  const vol = !AMB.on ? 0 : state === 'pause' || state === 'admin' || state === 'log' ? AMB.vol * 0.35 : AMB.vol * (0.6 + 0.4 * L);
+  const vol = (typeof MUS !== 'undefined' && MUS.on ? 0.6 : 1) * (!AMB.on ? 0 : 1) * (state === 'pause' || state === 'admin' || state === 'log' ? AMB.vol * 0.35 : AMB.vol * (0.6 + 0.4 * L));
   AMB.master.gain.setTargetAtTime(vol, t, 0.5);
   n.tG.gain.setTargetAtTime(Math.max(0, L - 0.35) * 0.45, t, 0.8);
   n.tf.frequency.setTargetAtTime(500 + 1400 * L, t, 0.8);
@@ -3662,17 +3665,19 @@ function ambTick(dt) {
 addEventListener('pointerdown', ambStart);
 addEventListener('keydown', e => {
   if (e.code === 'KeyM' && !e.repeat && !(e.target && e.target.tagName === 'INPUT') && state !== 'admin' && !(MP && MP.admin)) { ambToggle(); return; }
+  if (e.code === 'KeyN' && !e.repeat && !(e.target && e.target.tagName === 'INPUT') && state !== 'admin' && !(MP && MP.admin)) { musToggle(); return; }
   ambStart();
 });
 document.getElementById('sndbtn').textContent = AMB.on ? '🔊' : '🔇';
 document.getElementById('sndbtn').onclick = e => { e.stopPropagation(); ambToggle(); };
+document.getElementById('musbtn').onclick = e => { e.stopPropagation(); ambStart(); musToggle(); };
 
 // =====================================================================
 // 🔊 Lydeffekter – laves direkte i browseren (Web Audio), ingen lydfiler
 // sfx(navn, x, y): lyde fra verden bliver svagere langt væk og kommer fra venstre/højre
 // =====================================================================
 const SFX = { out: null, noise: null, last: {}, vol: 0.55 };
-const SFX_GAP = { w_minigun: 0.045, w_flamer: 0.09, w_rifle: 0.06, hit: 0.03, ric: 0.04, eshot: 0.05, eflame: 0.12, hurt: 0.08, die: 0.03, saw: 0.12, pickup: 0.05, hookhit: 0.05, burnhit: 0.2 };
+const SFX_GAP = { spot: 0.15, servo: 0.3, ministep: 0.4, bossstep: 0.55, sawidle: 0.3, beep: 0.5, click: 0.03, w_minigun: 0.045, w_flamer: 0.09, w_rifle: 0.06, hit: 0.03, ric: 0.04, eshot: 0.05, eflame: 0.12, hurt: 0.08, die: 0.03, saw: 0.12, pickup: 0.05, hookhit: 0.05, burnhit: 0.2 };
 function sfxInit() {
   const c = AMB.ctx; if (!c || SFX.out) return;
   SFX.out = c.createGain(); SFX.out.gain.value = SFX.vol; SFX.out.connect(AMB.comp || c.destination);
@@ -3743,6 +3748,15 @@ const SFX_DEF = {
   alarm:     (d, t) => { for (let k = 0; k < 3; k++) sTone(d, t + k * 0.16, 'square', 880, 660, 0.13, 0.22); },
   pickup:    (d, t) => { [660, 880, 1320].forEach((f, i) => sTone(d, t + i * 0.055, 'sine', f, f, 0.16, 0.22)); },
   weapon:    (d, t) => { sTone(d, t, 'square', 330, 330, 0.08, 0.2); sTone(d, t + 0.08, 'square', 495, 495, 0.14, 0.2); sNoise(d, t, 'bandpass', 2500, 2500, 3, 0.08, 0.2); },
+  spot:      (d, t) => { sTone(d, t, 'square', 1200, 1200, 0.06, 0.09); sTone(d, t + 0.08, 'square', 1600, 1600, 0.09, 0.09); },
+  tele:      (d, t) => { sTone(d, t, 'sine', 1800, 200, 0.25, 0.2); sTone(d, t, 'triangle', 300, 2400, 0.2, 0.1); },
+  servo:     (d, t) => { const f = 180 + Math.random() * 80; sTone(d, t, 'sawtooth', f, f * 1.35, 0.11, 0.05, 0.02); sNoise(d, t, 'bandpass', 900, 1400, 4, 0.08, 0.05); },
+  ministep:  (d, t) => { sTone(d, t, 'sine', 110, 55, 0.14, 0.28); sNoise(d, t, 'lowpass', 600, 150, 1, 0.1, 0.12); },
+  bossstep:  (d, t) => { sTone(d, t, 'sine', 75, 32, 0.3, 0.55); sNoise(d, t, 'lowpass', 400, 80, 1, 0.22, 0.25); sTone(d, t + 0.02, 'square', 140, 90, 0.08, 0.04); },
+  sawidle:   (d, t) => { const c = AMB.ctx, o = c.createOscillator(), g = c.createGain(); o.type = 'sawtooth'; o.frequency.value = 260 + Math.random() * 30;
+               g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.05, t + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3); o.connect(g); g.connect(d); o.start(t); o.stop(t + 0.32); },
+  beep:      (d, t) => { const f = [880, 990, 1320, 740][Math.floor(Math.random() * 4)]; sTone(d, t, 'square', f, f, 0.05, 0.05); sTone(d, t + 0.07, 'square', f * 1.25, f * 1.25, 0.05, 0.04); },
+  click:     (d, t) => { sTone(d, t, 'square', 1400, 900, 0.04, 0.12); sNoise(d, t, 'highpass', 4000, 4000, 0.7, 0.02, 0.15); },
   wave:      (d, t) => { sTone(d, t, 'sawtooth', 110, 110, 1.3, 0.12, 0.25); sTone(d, t, 'sawtooth', 164.8, 164.8, 1.3, 0.09, 0.25); sTone(d, t, 'sine', 55, 55, 1.4, 0.4, 0.2); }
 };
 function sfx(name, x, y) {
@@ -3753,6 +3767,94 @@ function sfx(name, x, y) {
   SFX.last[name] = now;
   try { def(sfxDest(x, y), now + 0.005); } catch (e) {}
 }
+
+// =====================================================================
+// 🎵 Musik – mørk synth i A-mol, laves direkte i browseren
+// Menu: rolig flade og arpeggio. I spillet: bas, trommer og arpeggio, der bliver
+// kraftigere med flere robotter og går helt amok ved bosser. N slår musikken til og fra.
+// =====================================================================
+const MUS = { on: lsGet('robotjagt_music', '1') === '1', out: null, next: 0, step: 0, bpm: 112, timer: null, lvl: 0, delay: null };
+// Akkorder (A-mol, F, C, E) – grundtoner og akkordtoner i Hz
+const MUS_CH = [
+  { root: 55, tones: [220, 261.63, 329.63, 440] },   // Am
+  { root: 43.65, tones: [174.61, 220, 261.63, 349.23] }, // F
+  { root: 65.41, tones: [196, 261.63, 329.63, 392] }, // C
+  { root: 41.2, tones: [164.81, 207.65, 246.94, 329.63] } // E (dur – mere spænding)
+];
+function musInit() {
+  const c = AMB.ctx; if (!c || MUS.out) return;
+  MUS.out = c.createGain(); MUS.out.gain.value = 0; MUS.out.connect(AMB.comp || c.destination);
+  const dl = c.createDelay(1); dl.delayTime.value = 60 / MUS.bpm * 0.75; const fb = c.createGain(); fb.gain.value = 0.32;
+  const dlf = c.createBiquadFilter(); dlf.type = 'lowpass'; dlf.frequency.value = 2200;
+  dl.connect(dlf); dlf.connect(fb); fb.connect(dl); dlf.connect(MUS.out); MUS.delay = dl;
+}
+function mNote(t, type, f, dur, vol, cut, dest, attack = 0.005) {
+  const c = AMB.ctx, o = c.createOscillator(), fl = c.createBiquadFilter(), g = c.createGain();
+  o.type = type; o.frequency.value = f; fl.type = 'lowpass'; fl.frequency.setValueAtTime(cut, t); fl.frequency.exponentialRampToValueAtTime(Math.max(80, cut * 0.3), t + dur);
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + attack); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(fl); fl.connect(g); g.connect(dest || MUS.out); o.start(t); o.stop(t + dur + 0.05);
+  return g;
+}
+function mKick(t, v) { const c = AMB.ctx, o = c.createOscillator(), g = c.createGain(); o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.14);
+  g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3); o.connect(g); g.connect(MUS.out); o.start(t); o.stop(t + 0.32); }
+function mNoise(t, ftype, f, dur, v) { if (!SFX.noise) sfxInit(); const c = AMB.ctx, s = c.createBufferSource(), fl = c.createBiquadFilter(), g = c.createGain();
+  s.buffer = SFX.noise; fl.type = ftype; fl.frequency.value = f; g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  s.connect(fl); fl.connect(g); g.connect(MUS.out); s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.02); }
+function musStep(t, i) {
+  const L = MUS.lvl, bar = Math.floor(i / 16) % 4, s = i % 16, ch = MUS_CH[bar], playing = state === 'play';
+  const sixteenth = 60 / MUS.bpm / 4;
+  // flade: lang akkord ved starten af hver takt
+  if (s === 0) for (const f of ch.tones.slice(0, 3)) mNote(t, 'triangle', f / 2, sixteenth * 16, 0.035, 900, null, 0.4);
+  // arpeggio (med ekko) – altid, men kraftigere i spillet
+  if (s % 2 === 0 || L > 0.55) {
+    const f = ch.tones[[0, 2, 1, 3, 2, 1, 3, 2][(s >> (L > 0.55 ? 0 : 1)) % 8]] * (L > 0.8 && s % 4 === 3 ? 2 : 1);
+    const g = mNote(t, 'square', f, sixteenth * 1.6, 0.018 + 0.02 * L, 1400 + 2400 * L);
+    g.connect(MUS.delay);
+  }
+  if (!playing && state !== 'over') return; // menu: kun flade og arpeggio
+  // bas: ottendedele, oktavspring
+  if (s % 2 === 0) mNote(t, 'sawtooth', ch.root * (s % 8 === 6 ? 2 : 1), sixteenth * 1.8, 0.09 + 0.05 * L, 380 + 700 * L);
+  if (state === 'over') return;
+  // trommer
+  if (s % 4 === 0 && (L > 0.45 || s % 8 === 0)) mKick(t, 0.45 + 0.25 * L);
+  if (L > 0.3 && (s === 4 || s === 12)) mNoise(t, 'bandpass', 1800, 0.16, 0.12 + 0.08 * L);
+  if (s % 2 === 0 || L > 0.7) mNoise(t, 'highpass', 7000, s % 4 === 2 ? 0.07 : 0.035, (s % 4 === 2 ? 0.045 : 0.025) * (0.6 + L));
+  if (L > 0.85 && s === 14) mNoise(t, 'bandpass', 1800, 0.12, 0.12); // ekstra slag ved bosser
+}
+function musTick() {
+  if (!AMB.ctx || AMB.ctx.state !== 'running') return;
+  musInit();
+  const c = AMB.ctx, sixteenth = 60 / MUS.bpm / 4;
+  const boss = state === 'play' && robots.some(r => r.type === 'boss' || r.type === 'ultra');
+  const target = state === 'play' ? (player.dead ? 0.15 : Math.min(1, 0.35 + robots.length * 0.04 + (boss ? 0.5 : 0))) : 0.1;
+  MUS.lvl += (target - MUS.lvl) * 0.05;
+  const vol = !(AMB.on && MUS.on) ? 0 : state === 'pause' || state === 'admin' || state === 'log' ? 0.25 : 0.6;
+  MUS.out.gain.setTargetAtTime(vol, c.currentTime, 0.4);
+  if (MUS.next < c.currentTime) MUS.next = c.currentTime + 0.05;
+  while (MUS.next < c.currentTime + 0.12) { if (vol > 0) musStep(MUS.next, MUS.step); MUS.next += sixteenth; MUS.step++; }
+}
+function musToggle() {
+  MUS.on = !MUS.on; lsSet('robotjagt_music', MUS.on ? '1' : '0');
+  const b = document.getElementById('musbtn'); if (b) b.style.opacity = MUS.on ? 1 : 0.45;
+}
+setInterval(() => { try { musTick(); } catch (e) {} }, 25);
+document.getElementById('musbtn').style.opacity = MUS.on ? 1 : 0.45;
+
+// Robotternes egne lyde: servoer og skridt fra de nærmeste, summende save
+let robSoundT = 0;
+function robotSounds(dt) {
+  if (state !== 'play' || !robots.length) return;
+  robSoundT -= dt; if (robSoundT > 0) return; robSoundT = 0.12;
+  let best = null, bd = 650;
+  for (const r of robots) { const d = Math.hypot(r.x - player.x, r.y - player.y); if (d < bd) { bd = d; best = r; } }
+  if (!best) return;
+  if (best.type === 'boss' || best.type === 'ultra') sfx('bossstep', best.x, best.y);
+  else if (best.type === 'mini') sfx('ministep', best.x, best.y);
+  else if (best.type === 'saw' && bd < 380) sfx('sawidle', best.x, best.y);
+  else sfx('servo', best.x, best.y);
+  if (Math.random() < 0.08) sfx('beep', best.x, best.y);
+}
+document.addEventListener('click', e => { if (e.target && e.target.closest && e.target.closest('button')) { ambStart(); sfx('click'); } }, true);
 
 let last = performance.now();
 // En fejl i ét billede må ikke stoppe hele spillet: næste billede bestilles først, og fejl fanges og vises kort.
@@ -3768,7 +3870,7 @@ function loop(now) {
   const dt = Math.min(0.033, (now - last) / 1000); last = now;
   try { if (state === 'play') update(dt); } catch (e) { reportError(e); }
   try { if (state !== 'pause' && state !== 'admin' && state !== 'log') updateParticles(dt); } catch (e) { reportError(e); }
-  try { ambTick(dt); } catch (e) {}
+  try { ambTick(dt); robotSounds(dt); } catch (e) {}
   try { draw(); } catch (e) { reportError(e); try { ctx.restore(); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); } catch (er) {} }
   document.getElementById('foot').classList.toggle('hidden', state === 'play' && isTouch);
 }
