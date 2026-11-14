@@ -858,6 +858,7 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyQ' && !e.repeat) { fireSuper(); return; }
   if (e.code === 'KeyF' && !e.repeat) { throwGrenade(); return; }
   if (e.code === 'KeyG' && !e.repeat) { fireHook(); return; }
+  if (e.code === 'KeyZ' && !e.repeat) { deleteBuild(); return; }
   const dn = /^(Digit|Numpad)([1-9])$/.exec(e.code); if (dn) { selectSlot(+dn[2] - 1); return; }
   if (e.code === 'KeyE' && !e.repeat && (state === 'play' || state === 'pause')) { openAdmin(); return; }
   keys.add(e.code);
@@ -2462,6 +2463,7 @@ function drawHUDInner() {
   if (adminMode) { lines.push('ADMIN-TILSTAND'); extraColors.push('#ffd84a'); }
   const nw = nextWaveIn(); if (nw !== null && state === 'play') { lines.push(`Næste bølge om ${Math.ceil(nw)} s`); extraColors.push('#ffb347'); }
   if (p.revives > 0) { lines.push(`Genoplivning: ${p.revives}`); extraColors.push('#fff3b0'); }
+  if (p.skin === 'builder' && !isTouch) { lines.push('🔨 Z: slet en væg'); extraColors.push('#ff9a3c'); }
   if (p.disguise) { lines.push('🤖 Forklædt – robotterne angriber dig ikke'); extraColors.push('#ff6b5b'); }
   if (p.skin === 'fish') { lines.push(p.hookCd > 0 ? `Harpun: ${Math.ceil(p.hookCd)} s` : `Harpun klar (${TOUCH ? 'HARPUN-knappen' : 'G'})`); extraColors.push('#f2c230'); }
   if (p.rateMul > 1) { lines.push(`Skudhast.: +${Math.round((p.rateMul - 1) * 100)} %`); extraColors.push('#6ff0e2'); }
@@ -2911,6 +2913,21 @@ function betray(r) { // du skød en robot, mens du var forklædt og gemt i en bu
 }
 // 🔨 Bygmester: ingen grænse for byggemateriale, materiale 2,5 gange hurtigere, vægge 3 gange stærkere
 function matCap() { return player.skin === 'builder' ? Infinity : CFG.maxMaterials; }
+function deleteBuild() { // bygmester: Z sletter væggen, musen peger på (inden for byggeafstand) og giver materialet tilbage
+  const p = player;
+  if (state !== 'play' || p.skin !== 'builder' || p.dead || (MP && MP.menu)) return;
+  const x = !isTouch && mouse.active ? cam.x + mouse.x / zoom : p.x + Math.cos(p.angle) * GS, y = !isTouch && mouse.active ? cam.y + mouse.y / zoom : p.y + Math.sin(p.angle) * GS;
+  if (x < 0 || y < 0 || x >= WORLD.w || y >= WORLD.h) return;
+  const w = builtAt[cellOf(x, y)];
+  if (!w || Math.hypot(w.x + GS / 2 - p.x, w.y + GS / 2 - p.y) > CFG.buildRange + GS) return;
+  removeWall(w); materials = Math.min(matCap(), materials + 1);
+  if (MP && MP.role === 'client') mpSend({ t: 'unbuild', i: w.i });
+}
+function removeWall(w) {
+  if (!builtAt[w.i]) return;
+  builtWalls.splice(builtWalls.indexOf(w), 1); builtAt[w.i] = null; flowDirty = true;
+  burst(w.x + GS / 2, w.y + GS / 2, '#c9a06a', 14, 200); sfx('build', w.x + GS / 2, w.y + GS / 2);
+}
 function matGain() { return player.skin === 'builder' ? 3 : 1; } // bygmester: 3 byggematerialer hver gang
 function inWallMax() { return player.skin === 'builder' ? 40 : CFG.insideWallMax; } // bygmester: må stå i væggene i 40 sek.
 function matEvery() { return CFG.materialEvery / (player.skin === 'builder' ? 2.5 : 1); }
@@ -3335,6 +3352,7 @@ function mpHostMsg(id, d) {
     return;
   }
   if (d.t === 'build') { mpBuildAt(d.x, d.y, !!d.strong); return; }
+  if (d.t === 'unbuild') { const w = builtAt[d.i]; if (w) removeWall(w); return; }
   if (d.t === 'ff') { if (d.to === 'host') mpTakeFF(d.dmg); else mpSend({ t: 'ff', dmg: d.dmg }, MP.conns.get(d.to)); return; }
   if (d.t === 'rev') { if (d.to === 'host') mpRevived(MP.names[id]); else mpSend({ t: 'rev', by: MP.names[id] }, MP.conns.get(d.to)); return; }
   if (d.t === 'admused') { MP.adminUsed = true; return; }
