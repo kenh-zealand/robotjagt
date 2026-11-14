@@ -740,7 +740,7 @@ function updateMeteors(dt) {
       const R = CFG.ultraMeteorRadius;
       shake = Math.max(shake, 8); rings.push({ x: m.x, y: m.y, t: 0.15, meteor: true }); sfx('boom2', m.x, m.y);
       burst(m.x, m.y, '#ff7a2a', 22, 320); burst(m.x, m.y, '#5a4a40', 14, 220); burst(m.x, m.y, '#ffdf6b', 8, 160);
-      for (const t of mpAll()) if (!t.dead && !t.disguise && Math.hypot(t.x - m.x, t.y - m.y) < R + t.r) mpHit(t, CFG.ultraMeteorDamage);
+      for (const t of mpAll()) if (!t.dead && !t.disguise && !(t.skin === 'builder' && t.inWallT > 0) && Math.hypot(t.x - m.x, t.y - m.y) < R + t.r) mpHit(t, CFG.ultraMeteorDamage); // bygmester i sin væg: beskyttet mod meteorer
       builtInBox(m.x - R, m.y - R, m.x + R, m.y + R, w => { if (circleHitsRect(m.x, m.y, R, w)) damageWall(w, CFG.wallHp * 0.6, true); return false; });
     }
   }
@@ -3182,7 +3182,7 @@ function mpMe() {
   const p = player;
   return { x: Math.round(p.x), y: Math.round(p.y), angle: Math.round(p.angle * 100) / 100, hp: Math.round(p.hp), maxHp: Math.round(p.maxHp), r: p.r,
     skin: p.skin || null, weapon: p.weapon, hidden: !!p.hidden, reveal: Math.round((p.reveal || 0) * 10) / 10, flash: Math.round((p.flash || 0) * 100) / 100,
-    dead: !!p.dead, invuln: Math.round((p.invuln || 0) * 10) / 10, name: mpMyName(), disguise: !!p.disguise, hook: p.hook ? [Math.round(p.hook.x), Math.round(p.hook.y)] : null };
+    dead: !!p.dead, invuln: Math.round((p.invuln || 0) * 10) / 10, inWallT: p.inWallT > 0 ? 1 : 0, name: mpMyName(), disguise: !!p.disguise, hook: p.hook ? [Math.round(p.hook.x), Math.round(p.hook.y)] : null };
 }
 
 // ---------- Lobby ----------
