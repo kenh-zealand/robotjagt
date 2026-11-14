@@ -110,7 +110,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
-  { v: '1.65', d: '14-11-2026', items: ['Savrobotter er længere om at smadre bygninger: 10 sekunder om én væg i stedet for 2,5 sekunder', 'Fejl rettet: savrobotter kunne hugge vægge op til 15 gange for hurtigt, når de ikke stod ved dig'] },
+  { v: '1.65', d: '14-11-2026', items: ['Savrobotter er længere om at smadre bygninger: 10 sekunder om én væg i stedet for 2,5 sekunder', 'Fejl rettet: savrobotter kunne hugge vægge op til 15 gange for hurtigt, når de ikke stod ved dig', 'Musikken er skruet meget op, og en begrænser sørger for, at høj lyd ikke skratter'] },
   { v: '1.64', d: '14-11-2026', items: ['🎵 Musik: mørk synth med bas, trommer og arpeggio – rolig i menuen og kraftigere, jo flere robotter der er, helt vild ved bosser', 'Slå musikken til og fra med N eller 🎵-knappen nederst til venstre', 'Robotterne har fået egne lyde: servoer, skridt (tunge for minibosser og bosser), summende save og små bip', 'Bip-alarm når en robot opdager dig, og en lyd når robotter teleporterer', 'Klik-lyd på alle knapper'] },
   { v: '1.63', d: '14-11-2026', items: ['🔊 Lydeffekter til alt: hvert våben har sin egen lyd, robotternes skud, plasma, missiler, flammer, save og stamp', 'Lyd når robotter bliver ramt og dør (større brag for minibosser og bosser), når skud rammer vægge, når du bliver ramt, og ved eksplosioner', 'Lyd ved pickups, våben, granatkast, super, byggeri, vægge der går i stykker, ny bølge og genoplivning', 'Lyde langt væk er svagere og kommer fra venstre eller højre – M slår al lyd til og fra'] },
   { v: '1.62', d: '14-11-2026', items: ['Når der er 10 eller færre robotter tilbage, starter næste bølge automatisk efter 30 sekunder – så man ikke kan blive og samle powerups i det uendelige', 'En bølge varer højst 7 minutter – derefter starter den næste uanset hvad', 'Nedtællingen til næste bølge vises øverst til højre'] },
@@ -3673,7 +3673,11 @@ function ambBuild() {
   const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return false;
   const c = AMB.ctx = new AC();
   const master = AMB.master = c.createGain(); master.gain.value = 0;
-  const comp = AMB.comp = c.createDynamicsCompressor(); master.connect(comp); comp.connect(c.destination);
+  const comp = AMB.comp = c.createDynamicsCompressor(); master.connect(comp);
+  comp.threshold.value = -16; comp.knee.value = 6; comp.ratio.value = 12; comp.attack.value = 0.003; comp.release.value = 0.2;
+  const clip = c.createWaveShaper(), curve = new Float32Array(1024); // blød begrænser til sidst, så høj lyd ikke skratter
+  for (let i = 0; i < 1024; i++) { const x = i / 511.5 - 1; curve[i] = Math.tanh(x * 1.4) / Math.tanh(1.4); }
+  clip.curve = curve; comp.connect(clip); clip.connect(c.destination);
   const rev = c.createConvolver(); rev.buffer = ambImpulse(c, 5, 2.4);
   const revG = c.createGain(); revG.gain.value = 0.7; rev.connect(revG); revG.connect(master);
   const dry = c.createGain(); dry.gain.value = 0.5; dry.connect(master);
@@ -3918,7 +3922,7 @@ function musTick() {
   const boss = state === 'play' && robots.some(r => r.type === 'boss' || r.type === 'ultra');
   const target = state === 'play' ? (player.dead ? 0.15 : Math.min(1, 0.35 + robots.length * 0.04 + (boss ? 0.5 : 0))) : 0.1;
   MUS.lvl += (target - MUS.lvl) * 0.05;
-  const vol = !(AMB.on && MUS.on) ? 0 : state === 'pause' || state === 'admin' || state === 'log' ? 0.25 : 0.6;
+  const vol = !(AMB.on && MUS.on) ? 0 : (state === 'pause' || state === 'admin' || state === 'log' ? 0.25 : 0.6) * 8; // 8 gange højere
   MUS.out.gain.setTargetAtTime(vol, c.currentTime, 0.4);
   if (MUS.next < c.currentTime) MUS.next = c.currentTime + 0.05;
   while (MUS.next < c.currentTime + 0.12) { if (vol > 0) musStep(MUS.next, MUS.step); MUS.next += sixteenth; MUS.step++; }
