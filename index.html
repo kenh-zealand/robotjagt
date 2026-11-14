@@ -1296,9 +1296,16 @@ function updateHook(p, dt) { // true = man bliver trukket (almindelig styring er
   const ox = p.x, oy = p.y;
   p.x += dx / d * sp; p.y += dy / d * sp; pushOut(p, p.wallBan <= 0 && !D.wallsSolid);
   if (Math.hypot(p.x - ox, p.y - oy) < sp * 0.3) { h.stuck += dt; if (h.stuck > 0.12) { p.hook = null; return true; } }
-  for (const r of robots.slice()) if (!h.hit.has(r) && Math.hypot(r.x - p.x, r.y - p.y) < r.r + p.r + 4) { // man brager ind i robotten
-    h.hit.add(r); damageRobot(r, CFG.hookDmg * (p.skinDmg || 1), r.x, r.y);
-    burst(r.x, r.y, '#f2c230', 22, 320); shake = Math.max(shake, 8);
+  const ux = dx / d, uy = dy / d;
+  for (const r of robots.slice()) {
+    const rx = r.x - p.x, ry = r.y - p.y, ahead = rx * ux + ry * uy, side = rx * -uy + ry * ux, reach = r.r + p.r + 6;
+    if (Math.hypot(rx, ry) >= reach + 30 || ahead < -p.r || ahead > d + reach) continue;
+    if (Math.abs(side) >= reach) continue; // ikke i vejen
+    // man brager igennem: robotten bliver slået ud til siden af ruten
+    const sgn = side >= 0 ? 1 : -1;
+    r.x = p.x + ux * Math.max(0, ahead) + -uy * sgn * (reach + 8); r.y = p.y + uy * Math.max(0, ahead) + ux * sgn * (reach + 8); pushOut(r);
+    if (MP && MP.role === 'client' && r.id) MP.knock[r.id] = [Math.round(r.x), Math.round(r.y)];
+    if (!h.hit.has(r)) { h.hit.add(r); damageRobot(r, CFG.hookDmg * (p.skinDmg || 1), r.x, r.y); burst(r.x, r.y, '#f2c230', 22, 320); shake = Math.max(shake, 8); }
   }
   if (Math.random() < 0.7) particles.push({ x: p.x + rand(-8, 8), y: p.y + rand(-8, 8), vx: rand(-30, 30), vy: rand(-30, 30), life: 0.35, max: 0.35, color: ['#9fe8ff', '#ffffff', '#5fb8e8'][Math.floor(Math.random() * 3)], size: rand(2, 4), drag: 0.92 });
   return true;
@@ -3028,7 +3035,7 @@ function mpStartGame(slot) {
   if (TOUCH) goFullscreen();
   start(false);
   player.x += slot * 60; player.y += slot * 30;
-  others = []; MP.revT = {}; MP.took = new Set(); MP.reqPU = new Set(); MP.dq = new Map(); MP.burn = {}; MP.shots = []; MP.slow = new Set(); MP.adminUsed = false; MP.admin = false; MP.menu = false; MP.snapT = 0; MP.stT = 0; MP.over = false; mpFx = [];
+  others = []; MP.revT = {}; MP.took = new Set(); MP.reqPU = new Set(); MP.dq = new Map(); MP.burn = {}; MP.shots = []; MP.slow = new Set(); MP.knock = {}; MP.adminUsed = false; MP.admin = false; MP.menu = false; MP.snapT = 0; MP.stT = 0; MP.over = false; mpFx = [];
   if (MP.role === 'host') { MP.players = new Map(); }
   popups.push({ x: player.x, y: player.y - 90, text: '👥 Multiplayer – ' + Object.values(MP.names).join(', '), color: '#8fd0ff', t: -1.2 });
 }
@@ -3052,7 +3059,7 @@ async function mpJoin(name, code) {
   peer.on('error', er => { if (!MP || !MP.id) fail(er.type === 'peer-unavailable' ? 'Fandt intet spil med koden ' + code : 'Kunne ikke forbinde (' + (er.type || er) + ')'); });
   peer.on('open', () => {
     const conn = peer.connect(MP_PREFIX + code, { reliable: true });
-    MP = { role: 'client', peer, conn, code, id: null, names: {}, ff: false, mode: 'normal', took: new Set(), revT: {}, reqPU: new Set(), dq: new Map(), burn: {}, shots: [], slow: new Set() };
+    MP = { role: 'client', peer, conn, code, id: null, names: {}, ff: false, mode: 'normal', took: new Set(), revT: {}, reqPU: new Set(), dq: new Map(), burn: {}, shots: [], slow: new Set(), knock: {} };
     setTimeout(() => { if (MP && MP.conn === conn && !MP.id) fail('Fandt intet spil med koden ' + code); }, 12000);
     conn.on('open', () => mpSend({ t: 'hello', name, v: VERSION }, conn));
     conn.on('data', d => { try { mpClientMsg(d); } catch (e) { reportError(e); } });
@@ -3097,6 +3104,7 @@ function mpHostMsg(id, d) {
     const ox = p.x, oy = p.y, first = p.tx === undefined; Object.assign(p, d.s); p.tx = d.s.x; p.ty = d.s.y; if (!first) { p.x = ox; p.y = oy; }
     for (const [rid, dmg, q] of d.dr || []) { const r = robots.find(o => o.id === rid); if (r) damageRobot(r, dmg, r.x, r.y, !!q); }
     for (const k in d.burn || {}) { const r = robots.find(o => o.id === +k); if (r) { r.burnT = CFG.burnTime; r.burnDps = d.burn[k]; } }
+    for (const k in d.kn || {}) { const r = robots.find(o => o.id === +k); if (r) { r.x = d.kn[k][0]; r.y = d.kn[k][1]; pushOut(r); } }
     for (const rid of d.sl || []) { const r = robots.find(o => o.id === rid); if (r) r.slowT = CFG.iceSlowTime; }
     for (const s of d.sh || []) bullets.push({ x: s[0], y: s[1], vx: s[2], vy: s[3], life: s[4], owner: 'v', team: true, strong: !!s[5], april: !!s[6], from: id });
     return;
@@ -3260,6 +3268,7 @@ function mpClientUpdate(dt) {
     if (Object.keys(MP.burn).length) { msg.burn = MP.burn; MP.burn = {}; }
     if (MP.shots.length) { msg.sh = MP.shots; MP.shots = []; }
     if (MP.slow.size) { msg.sl = [...MP.slow]; MP.slow.clear(); }
+    if (Object.keys(MP.knock).length) { msg.kn = MP.knock; MP.knock = {}; }
     mpSend(msg);
   }
 }
