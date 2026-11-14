@@ -2170,6 +2170,15 @@ function drawPlayer() {
     const sx = Math.cos(sa) * p.r * 0.55, sy = Math.sin(sa) * p.r * 0.55;
     ctx.beginPath(); ctx.moveTo(sx, sy - 6); ctx.lineTo(sx + 2, sy - 2); ctx.lineTo(sx + 6, sy); ctx.lineTo(sx + 2, sy + 2); ctx.lineTo(sx, sy + 6); ctx.lineTo(sx - 2, sy + 2); ctx.lineTo(sx - 6, sy); ctx.lineTo(sx - 2, sy - 2); ctx.closePath(); ctx.fill();
     ctx.globalAlpha = 1;
+  } else if (p.skin === 'banana' && p.flash <= 0) { // banan: krum gul banan med brune ender
+    ctx.save(); ctx.rotate(Math.PI / 2);
+    ctx.beginPath(); ctx.arc(0, 14, 26, Math.PI * 1.18, Math.PI * 1.82); ctx.arc(0, 26, 22, Math.PI * 1.75, Math.PI * 1.25, true); ctx.closePath();
+    const g = ctx.createLinearGradient(0, -14, 0, 8); g.addColorStop(0, '#fff28a'); g.addColorStop(0.6, '#ffd92e'); g.addColorStop(1, '#d9a400');
+    ctx.fillStyle = g; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#8a6a00'; ctx.stroke();
+    ctx.strokeStyle = 'rgba(160,120,0,.55)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(0, 18, 21, Math.PI * 1.25, Math.PI * 1.75); ctx.stroke(); // ribbe
+    ctx.fillStyle = '#5a3d10';
+    for (const sx of [-1, 1]) { const a = sx < 0 ? Math.PI * 1.2 : Math.PI * 1.8; ctx.beginPath(); ctx.arc(Math.cos(a) * 24, 14 + Math.sin(a) * 24, 3.2, 0, Math.PI * 2); ctx.fill(); }
+    ctx.restore();
   } else if (p.skin === 'fish' && p.flash <= 0) { // fiskemand: gul regnfrakke med knapper
     const g = ctx.createRadialGradient(-5, -5, 1, 0, 0, p.r);
     g.addColorStop(0, '#fff2a8'); g.addColorStop(0.55, '#f2c230'); g.addColorStop(1, '#b8860b');
@@ -2220,7 +2229,7 @@ function drawPlayer() {
   ctx.lineWidth = 3; ctx.strokeStyle = gold ? '#9a7410' : '#1d4f99'; ctx.stroke();
   }
   if (gold) { ctx.strokeStyle = 'rgba(255,248,200,' + (0.4 + 0.3 * Math.sin(time * 5)) + ')'; ctx.lineWidth = 2; circle(0, 0, p.r + 4); ctx.stroke(); }
-  circle(-4, -4, p.r * 0.4); ctx.fillStyle = 'rgba(255,255,255,.25)'; ctx.fill();
+  if (p.skin !== 'banana') { circle(-4, -4, p.r * 0.4); ctx.fillStyle = 'rgba(255,255,255,.25)'; ctx.fill(); }
   if (p.skin === 'fish') { // gul sydvest, altid øverst
     ctx.save(); ctx.rotate(-p.angle); ctx.translate(0, -p.r + 2);
     ctx.fillStyle = '#f2c230'; ctx.strokeStyle = '#7a5a08'; ctx.lineWidth = 1.5;
@@ -2455,7 +2464,7 @@ function menu() {
   panel.innerHTML = `<h1>Robotjagt</h1><p>Overlev så mange bølger af robotter som muligt. <span style="color:#93a0b0">· v${VERSION}</span></p>
     <div class="diff">${Object.entries(DIFFS).map(([k, d]) => `<button data-d="${k}" class="${k === difficulty ? 'on' : ''}" style="${k === difficulty ? 'border-color:' + d.color : ''}">${d.name}</button>`).join('')}</div>
     <div class="diff-info">${{ easy: 'Dobbelt liv, dobbelt så hurtig genladning, robotterne er halvt så stærke. Miniboss hver 5. bølge, boss hver 20., ingen ultra-boss. Mellemrum sigter automatisk.', normal: 'Det almindelige spil.', hard: 'Du er halvt så stærk, robotterne dobbelt så stærke. Ingen genladning – find skud og træ på banen. Du kan ikke gå gennem dine egne vægge.' }[difficulty]}</div>
-    <div class="menu-btns"><button id="go">Start spil</button><button class="sec" id="mpnow">👥 Multiplayer</button><button class="sec" id="admstart">⚙ Admin-tilstand</button><button class="sec" id="aprilstart">🤡 Aprilsnar</button><button class="sec" id="hsnow">🏆 Highscore</button><button class="sec" id="lockernow">🎽 Locker</button><button class="sec" id="codesnow">🔑 Koder</button><button class="sec" id="lognow">Ændringslog</button></div>${pendingSkin ? (pendingSkin === 'diamond' ? '<p class="tip" style="color:#9fefff">💎 Diamant-skin er klar til næste runde</p>' : pendingSkin === 'rainbow' ? '<p class="tip" style="color:#8fd0ff">🌈 Regnbue-skin er klar til næste runde</p>' : pendingSkin === 'flame' ? '<p class="tip" style="color:#ff8a3a">🔥 Flamme-skin er klar til næste runde</p>' : pendingSkin === 'angel' ? '<p class="tip" style="color:#fff3b0">😇 Engle-skin er klar til næste runde</p>' : pendingSkin === 'owner' ? '<p class="tip" style="color:#ffd84a">👑 Ejer-skin er klar til næste runde</p>' : pendingSkin === 'ice' ? '<p class="tip" style="color:#9fe8ff">❄ Is-skin er klar til næste runde</p>' : pendingSkin === 'fish' ? '<p class="tip" style="color:#f2c230">🎣 Fiskemand-skin er klar til næste runde (harpun på G)</p>' : '<p class="tip" style="color:#ffd84a">✨ Guld-skin er klar til næste runde</p>') : ''}
+    <div class="menu-btns"><button id="go">Start spil</button><button class="sec" id="mpnow">👥 Multiplayer</button><button class="sec" id="admstart">⚙ Admin-tilstand</button><button class="sec" id="aprilstart">🤡 Aprilsnar</button><button class="sec" id="hsnow">🏆 Highscore</button><button class="sec" id="lockernow">🎽 Locker</button><button class="sec" id="codesnow">🔑 Koder</button><button class="sec" id="lognow">Ændringslog</button></div>${pendingSkin ? (pendingSkin === 'diamond' ? '<p class="tip" style="color:#9fefff">💎 Diamant-skin er klar til næste runde</p>' : pendingSkin === 'rainbow' ? '<p class="tip" style="color:#8fd0ff">🌈 Regnbue-skin er klar til næste runde</p>' : pendingSkin === 'flame' ? '<p class="tip" style="color:#ff8a3a">🔥 Flamme-skin er klar til næste runde</p>' : pendingSkin === 'angel' ? '<p class="tip" style="color:#fff3b0">😇 Engle-skin er klar til næste runde</p>' : pendingSkin === 'owner' ? '<p class="tip" style="color:#ffd84a">👑 Ejer-skin er klar til næste runde</p>' : pendingSkin === 'ice' ? '<p class="tip" style="color:#9fe8ff">❄ Is-skin er klar til næste runde</p>' : pendingSkin === 'banana' ? '<p class="tip" style="color:#ffe14a">🍌 Banan-skin er klar til næste runde</p>' : pendingSkin === 'fish' ? '<p class="tip" style="color:#f2c230">🎣 Fiskemand-skin er klar til næste runde (harpun på G)</p>' : '<p class="tip" style="color:#ffd84a">✨ Guld-skin er klar til næste runde</p>') : ''}
     ${portrait ? '<p class="tip">📱 Spillet er bedst, når du vender telefonen på langs.</p>' : ''}
     ${TOUCH && !canFullscreen() ? '<p class="tip">Tip: Del → "Føj til hjemmeskærm" giver fuld skærm.</p>' : ''}
     <details ${TOUCH ? '' : 'open'}><summary>Sådan spiller du</summary>
@@ -2510,7 +2519,8 @@ ${controls}
 let aprilMode = false; // 🤡 aprilsnar: dine skud er granater – runden kommer på Aprilsnar-tavlen
 // Skade fra sværhedsgrad og skin – gælder alt: skud, flammer, super-missil og granater (og ganges med lilla sværd)
 function pDmg() { return D.playerDmg * (player.skinDmg || 1); }
-function start(admin) { D = DIFFS[difficulty]; reset(); if (!D.autoReload) player.ammo = CFG.hardStartAmmo; if (!D.autoMats) materials = CFG.startMaterials; player.skin = pendingSkin || equippedSkin(); if (player.skin) markSkin(player.skin); if (player.skin === 'owner') lsSet('robotjagt_locker', '1'); if (player.skin === 'rainbow') player.speedMul = 1.15; // regnbue: 15 % hurtigere
+function start(admin) { D = DIFFS[difficulty]; reset(); if (!D.autoReload) player.ammo = CFG.hardStartAmmo; if (!D.autoMats) materials = CFG.startMaterials; player.skin = pendingSkin || equippedSkin(); if (player.skin) markSkin(player.skin); if (player.skin === 'owner') lsSet('robotjagt_locker', '1'); if (player.skin === 'banana') player.skinDmg = 0.5; // banan: halvt så stærk
+  if (player.skin === 'rainbow') player.speedMul = 1.15; // regnbue: 15 % hurtigere
   if (player.skin === 'flame') player.skinDmg = 1.1; if (player.skin === 'fish') { player.skinDmg = 1.05; player.speedMul = 1.05; } if (player.skin === 'angel') { player.skinDmg = 2; player.speedMul = 2; player.reloadMul = 2; player.revives = 5; } if (player.skin === 'owner') { player.rateMul = 2; player.ammoMul = 3; player.skinDmg = 6; player.speedMul = 3; player.reloadMul = 3; player.revives = 5; player.maxHp *= 6; player.hp = player.maxHp; } pendingSkin = null; adminFree = false; secretBuf = ''; for (const k in cheats) cheats[k] = false; adminMode = !!admin; usedAdmin = adminMode; state = 'play'; overlay.classList.add('hidden'); last = performance.now(); if (aprilMode) popups.push({ x: player.x, y: player.y - 70, text: '🤡 APRILSNAR – du skyder granater!', color: '#ff9de2', t: -1 }); }
 function pause() {
   if (MP) { mpPause(); return; }
@@ -2689,7 +2699,7 @@ let pendingSkin = null; // gælder kun for næste runde
 const skinCodesUsed = new Set(); // ejer-skin: alle skin-koder skal tastes (i vilkårlig rækkefølge)
 // 🎽 Locker (åben for alle): viser alle skins, man har aktiveret,
 // og det skin, man tager på, bliver på i alle runder, indtil man tager et andet (gemmes på enheden).
-const SKINS = { gold: ['✨ Guld', '#ffd84a'], rainbow: ['🌈 Regnbue', '#8fd0ff'], diamond: ['💎 Diamant', '#9fefff'], flame: ['🔥 Flamme', '#ff8a3a'], angel: ['😇 Engel', '#fff3b0'], ice: ['❄ Is', '#9fe8ff'], fish: ['🎣 Fiskemand', '#f2c230'], owner: ['👑 Ejer', '#ffd84a'] };
+const SKINS = { gold: ['✨ Guld', '#ffd84a'], rainbow: ['🌈 Regnbue', '#8fd0ff'], diamond: ['💎 Diamant', '#9fefff'], flame: ['🔥 Flamme', '#ff8a3a'], angel: ['😇 Engel', '#fff3b0'], ice: ['❄ Is', '#9fe8ff'], fish: ['🎣 Fiskemand', '#f2c230'], banana: ['🍌 Banan', '#ffe14a'], owner: ['👑 Ejer', '#ffd84a'] };
 function lsGet(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } }
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
 function usedSkins() { try { const a = JSON.parse(lsGet('robotjagt_skins', '[]')); return Array.isArray(a) ? a.filter(k => SKINS[k]) : []; } catch (e) { return []; } }
@@ -2706,7 +2716,7 @@ function openLocker() {
   panel.querySelectorAll('[data-skin]').forEach(b => b.onclick = () => { lsSet('robotjagt_equip', b.dataset.skin); pendingSkin = null; openLocker(); });
   document.getElementById('lockerback').onclick = menu;
 }
-const CODES = { 193423269: 'gold', 1715379802: 'rainbow', 916669625: 'diamond', 177609: 'flame', 1815438879: 'angel', 1721998069: 'ice', 1196447028: 'fish' }; // koderne gemmes kun som tal, så de ikke kan læses i koden
+const CODES = { 193423269: 'gold', 1715379802: 'rainbow', 916669625: 'diamond', 177609: 'flame', 1815438879: 'angel', 1721998069: 'ice', 1196447028: 'fish', 3934113543: 'banana' }; // koderne gemmes kun som tal, så de ikke kan læses i koden
 function codeHash(t) { let h = 5381; for (const c of t.trim().toLowerCase()) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0; return h; }
 function openCodes() {
   panel.innerHTML = `<h1>🔑 Koder</h1><p>Har du en kode? Skriv den her.</p>
@@ -2720,13 +2730,14 @@ function openCodes() {
     const msg = document.getElementById('codemsg'), what = CODES[codeHash(inp.value)];
     if (what === 'gold') { pendingSkin = 'gold'; msg.style.color = '#ffd84a'; msg.textContent = '✨ Guld-skin aktiveret til næste runde!'; }
     else if (what === 'diamond') { pendingSkin = 'diamond'; msg.style.color = '#9fefff'; msg.textContent = '💎 Diamant-skin aktiveret til næste runde!'; }
+    else if (what === 'banana') { pendingSkin = 'banana'; msg.style.color = '#ffe14a'; msg.textContent = '🍌 Banan-skin aktiveret til næste runde! (du er halvt så stærk)'; }
     else if (what === 'fish') { pendingSkin = 'fish'; msg.style.color = '#f2c230'; msg.textContent = '🎣 Fiskemand-skin aktiveret til næste runde! Harpun på G'; }
     else if (what === 'ice') { pendingSkin = 'ice'; msg.style.color = '#9fe8ff'; msg.textContent = '❄ Is-skin aktiveret til næste runde!'; }
     else if (what === 'angel') { pendingSkin = 'angel'; msg.style.color = '#fff3b0'; msg.textContent = '😇 Engle-skin aktiveret til næste runde!'; }
     else if (what === 'flame') { pendingSkin = 'flame'; msg.style.color = '#ff8a3a'; msg.textContent = '🔥 Flamme-skin aktiveret til næste runde!'; }
     else if (what === 'rainbow') { pendingSkin = 'rainbow'; msg.style.color = '#8fd0ff'; msg.textContent = '🌈 Regnbue-skin aktiveret til næste runde!'; }
     else { msg.style.color = ''; msg.textContent = 'Ukendt kode'; }
-    if (what) { markSkin(what); skinCodesUsed.add(what); if (skinCodesUsed.size >= 7) { skinCodesUsed.clear(); pendingSkin = 'owner'; msg.style.color = '#ffd84a'; msg.textContent = '👑 Ejer-skin aktiveret til næste runde!'; } }
+    if (what) { markSkin(what); skinCodesUsed.add(what); if (skinCodesUsed.size >= 8) { skinCodesUsed.clear(); pendingSkin = 'owner'; msg.style.color = '#ffd84a'; msg.textContent = '👑 Ejer-skin aktiveret til næste runde!'; } }
     if (pendingSkin) markSkin(pendingSkin);
     inp.value = ''; inp.focus();
   };
