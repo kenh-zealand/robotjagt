@@ -109,6 +109,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.62', d: '14-11-2026', items: ['Når der er 10 eller færre robotter tilbage, starter næste bølge automatisk efter 30 sekunder – så man ikke kan blive og samle powerups i det uendelige', 'En bølge varer højst 7 minutter – derefter starter den næste uanset hvad', 'Nedtællingen til næste bølge vises øverst til højre'] },
   { v: '1.61', d: '14-11-2026', items: ['🎵 Stemningslyd: mørk, rolig drone med vind og fjerne metalklange', 'Lyden bliver mere anspændt, jo flere robotter der er – og får et dunkende hjerteslag, når der er en boss', 'Slå lyden til og fra med M eller 🔊-knappen nederst til venstre (den husker dit valg)'] },
   { v: '1.60', d: '13-11-2026', items: ['Highscore-tavlen passer nu til skærmen, så man kan se hele top 10 uden at scrolle – også efter en runde og på telefon', 'Tavlerne er delt i to rækker: Alene og 👥 Hold'] },
   { v: '1.59', d: '13-11-2026', items: ['Admin kan bruges i multiplayer – vælg om det skal ske for dig, en bestemt holdkammerat eller hele holdet', 'Robotter og bølger fra admin gælder hele holdet, og spillet kører videre, mens panelet er åbent', 'Multiplayer-runder med admin kommer ikke på highscore'] },
@@ -176,6 +177,9 @@ const VERSION = CHANGELOG[0].v;
 // ---------- Indstillinger ----------
 const CFG = {
   playerMaxHp: 3000,
+  lowRobots: 10,         // når der er 10 eller færre robotter tilbage …
+  lowRobotsWait: 30,     // … starter næste bølge automatisk efter 30 sekunder
+  maxWaveTime: 420,      // og efter 7 minutter starter næste bølge uanset hvad
   reviveTime: 3,         // multiplayer: sekunder ved en holdkammerat for at genoplive
   reviveDist: 70,
   hookRange: 720,        // fiskemand: harpunen når 20 spillerbredder
@@ -609,7 +613,7 @@ function reset() {
   player = { x: 1100, y: 950, r: 18, hp: CFG.playerMaxHp * D.playerHp, maxHp: CFG.playerMaxHp * D.playerHp, dmgMul: 1, rateMul: 1, ammo: CFG.maxAmmo, maxAmmo: CFG.maxAmmo, weapon: 'pistol', inventory: ['pistol'], grenades: 0, lastHit: -99, fireCd: 0, angle: -Math.PI / 2, flash: 0, hidden: null, reveal: 0 };
   robots = []; bullets = []; particles = []; missiles = []; rings = []; superCharge = 0;
   powerups = []; popups = []; powerTimer = 3; ammoTimer = 12; maxHpTimer = 20; permDmgTimer = 22; permRateTimer = 36; buffs = { damage: 0, reload: 0 };
-  wave = 0; kills = 0; time = 0; waveTimer = 1.2; shake = 0;
+  wave = 0; kills = 0; time = 0; waveTimer = 1.2; shake = 0; waveAge = 0; lowT = 0;
   minisSpawned = 0;
   weaponDrops = []; weaponTimer = CFG.weaponFirst; meteors = []; supplies = []; supplyAmmoT = 1; supplyWoodT = 2; grenadeDrops = []; grenadeTimer = CFG.grenadeFirst; grenadesFlying = [];
   builtWalls = []; builtAt.fill(null); materials = CFG.startMaterials; matTimer = 0; buildMode = false; flowDirty = true; flowTimer = 0;
@@ -789,7 +793,7 @@ function drawMeteors() {
 }
 
 function spawnWave() {
-  wave++;
+  wave++; waveAge = 0; lowT = 0;
   disguiseAgain();
   const bossWave = wave % D.bossEvery === 0;
   const hm = (1 + CFG.hpPerWave * (wave - 1)) * D.robotHp;
@@ -1474,6 +1478,13 @@ function update(dt) {
   if (MP && MP.role === 'client') { mpClientUpdate(dt); return; } // klient: verden kommer fra værten
   time += dt;
   if (robots.length === 0 && !(MP && MP.over)) { waveTimer -= dt; if (waveTimer <= 0) { spawnWave(); waveTimer = 2.5; } }
+  else if (robots.length > 0 && !(MP && MP.over)) { // så man ikke kan blive i en bølge og samle powerups i det uendelige
+    waveAge += dt;
+    lowT = robots.length <= CFG.lowRobots ? lowT + dt : 0;
+    if (lowT >= CFG.lowRobotsWait || waveAge >= CFG.maxWaveTime) {
+      banner(lowT >= CFG.lowRobotsWait ? 'Næste bølge kommer!' : 'Tiden er gået – næste bølge!'); spawnWave();
+    }
+  }
   matTimer += dt;
   if (!D.autoMats) matTimer = 0; // Svær: byggematerialer findes kun på banen
   while (matTimer >= CFG.materialEvery) { matTimer -= CFG.materialEvery; if (materials < CFG.maxMaterials) materials++; }
@@ -2387,6 +2398,7 @@ function drawHUDInner() {
   if (p.grenades > 0) { lines.push(`Granater: ${p.grenades}${isTouch ? '' : ' (F)'}`); extraColors.push('#9be36f'); }
   if (difficulty !== 'normal') { lines.push(D.name.toUpperCase()); extraColors.push(D.color); }
   if (adminMode) { lines.push('ADMIN-TILSTAND'); extraColors.push('#ffd84a'); }
+  const nw = nextWaveIn(); if (nw !== null && state === 'play') { lines.push(`Næste bølge om ${Math.ceil(nw)} s`); extraColors.push('#ffb347'); }
   if (p.revives > 0) { lines.push(`Genoplivning: ${p.revives}`); extraColors.push('#fff3b0'); }
   if (p.disguise) { lines.push('🤖 Forklædt – robotterne angriber dig ikke'); extraColors.push('#ff6b5b'); }
   if (p.skin === 'fish') { lines.push(p.hookCd > 0 ? `Harpun: ${Math.ceil(p.hookCd)} s` : `Harpun klar (${TOUCH ? 'HARPUN-knappen' : 'G'})`); extraColors.push('#f2c230'); }
@@ -2544,6 +2556,13 @@ ${controls}
   panel.querySelectorAll('[data-d]').forEach(b => b.onclick = () => { difficulty = b.dataset.d; try { localStorage.setItem('robotjagt_diff', difficulty); } catch (e) {} menu(); });
 }
 // admin = true: admin-tilstand – alle har admin uden kode, men runden tæller ikke på highscore
+let waveAge = 0, lowT = 0; // sekunder i bølgen, og sekunder med 10 eller færre robotter tilbage
+function nextWaveIn() {
+  if (MP && MP.role === 'client') return MP.nextIn ?? null;
+  if (!robots.length) return null;
+  const t = Math.min(lowT > 0 ? CFG.lowRobotsWait - lowT : Infinity, CFG.maxWaveTime - waveAge);
+  return t <= 60 ? Math.max(0, t) : null;
+}
 let aprilMode = false; // 🤡 aprilsnar: dine skud er granater – runden kommer på Aprilsnar-tavlen
 // Skade fra sværhedsgrad og skin – gælder alt: skud, flammer, super-missil og granater (og ganges med lilla sværd)
 function pDmg() { return D.playerDmg * (player.skinDmg || 1); }
@@ -3288,7 +3307,7 @@ function mpSendSnaps() {
   const fx = mpFx; mpFx = [];
   const tk = o => o.takenBy || [];
   const base = {
-    t: 'snap', wave, kills, bt: bannerText, bT: Math.round(bannerT * 10) / 10,
+    t: 'snap', wave, kills, nw: nextWaveIn() === null ? null : Math.ceil(nextWaveIn()), bt: bannerText, bT: Math.round(bannerT * 10) / 10,
     rb: robots.map(mpOut),
     pw: powerups.map(o => [o.id, o.type, mpR(o.x), mpR(o.y)]),
     wd: weaponDrops.map(o => [o.id, o.type, mpR(o.x), mpR(o.y), tk(o)]),
@@ -3315,6 +3334,7 @@ function mpSendSnaps() {
 // ---------- Klient: verden fra værten ----------
 function mpApplySnap(s) {
   if (s.wave > wave && wave > 0) disguiseAgain(); // ny bølge hos værten
+  MP.nextIn = s.nw;
   wave = s.wave; kills = s.kills;
   if (s.bt !== bannerText || s.bT > bannerT + 0.3) { bannerText = s.bt; bannerT = s.bT; }
   const oldR = new Map(robots.map(r => [r.id, r]));
