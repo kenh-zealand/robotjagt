@@ -2818,6 +2818,7 @@ function disguiseAgain() { // robot-skin: ny bølge = forklædt igen, indtil man
 }
 function unmask() {
   const p = player; if (!p.disguise) return;
+  if (p.hidden) { if (time - (p.bushNote || -9) > 3) { p.bushNote = time; popups.push({ x: p.x, y: p.y - 50, text: '🌿 Ingen så, hvem der skød', color: '#6fe39a', t: 0 }); } return; } // skudt fra en busk: stadig forklædt
   p.disguise = false; shake = Math.max(shake, 10); burst(p.x, p.y, '#ff4a4a', 30, 320); rings.push({ x: p.x, y: p.y, t: 0, small: true });
   popups.push({ x: p.x, y: p.y - 50, text: '🚨 Robotterne har opdaget dig!', color: '#ff6b5b', t: -0.4 });
 }
