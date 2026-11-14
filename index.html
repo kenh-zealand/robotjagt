@@ -1549,7 +1549,8 @@ function updatePlayer(dt) {
     particles.push({ x: p.x - mx * 12 + rand(-10, 10), y: p.y - my * 12 + rand(-10, 6), vx: rand(-25, 25), vy: rand(-110, -50), life, max: life,
       color: ['#ffd23a', '#ff8a1a', '#ff4a10'][Math.floor(Math.random() * 3)], size: rand(2, 4), drag: 0.95 });
   }
-  p.x += mx * CFG.playerSpeed * (p.speedMul || 1) * dt; p.y += my * CFG.playerSpeed * (p.speedMul || 1) * dt;
+  const spd = CFG.playerSpeed * (p.speedMul || 1) * (p.skin === 'builder' && p.inWallT > 0 ? 3 : 1); // bygmester: +200 % fart inde i vægge
+  p.x += mx * spd * dt; p.y += my * spd * dt;
   p.invuln = Math.max(0, (p.invuln || 0) - dt);
   // Egne vægge: man må stå i dem i 3 sek. – bliver man længere, skubbes man ud og kan ikke gå igennem dem i 20 sek.
   p.wallBan = Math.max(0, (p.wallBan || 0) - dt);
