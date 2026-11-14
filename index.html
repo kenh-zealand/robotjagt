@@ -2454,7 +2454,7 @@ function drawHUDInner() {
   ctx.textAlign = 'right'; ctx.font = '800 16px system-ui,sans-serif';
   const lines = [`Bølge ${wave}`, `Robotter: ${robots.length}`, `Nedlagt: ${kills}`];
   const extraColors = [];
-  const totDmg = p.dmgMul * (p.skinDmg || 1);
+  const totDmg = p.dmgMul * (p.skinDmg || 1) * (p.skin === 'builder' && p.inWallT > 0 ? 2 : 1);
   if (totDmg > 1.001) { lines.push(`Skade: +${Math.round((totDmg - 1) * 100)} %`); extraColors.push('#c99bff'); }
   if (p.grenades > 0) { lines.push(`Granater: ${p.grenades}${isTouch ? '' : ' (F)'}`); extraColors.push('#9be36f'); }
   if (difficulty !== 'normal') { lines.push(D.name.toUpperCase()); extraColors.push(D.color); }
@@ -2627,7 +2627,7 @@ function nextWaveIn() {
 }
 let aprilMode = false; // 🤡 aprilsnar: dine skud er granater – runden kommer på Aprilsnar-tavlen
 // Skade fra sværhedsgrad og skin – gælder alt: skud, flammer, super-missil og granater (og ganges med lilla sværd)
-function pDmg() { return D.playerDmg * (player.skinDmg || 1); }
+function pDmg() { return D.playerDmg * (player.skinDmg || 1) * (player.skin === 'builder' && player.inWallT > 0 ? 2 : 1); } // bygmester: dobbelt skade inde i vægge
 function start(admin) { D = DIFFS[difficulty]; reset(); if (!D.autoReload) player.ammo = CFG.hardStartAmmo; if (!D.autoMats) materials = CFG.startMaterials; player.skin = pendingSkin || equippedSkin(); if (player.skin) markSkin(player.skin); if (player.skin === 'owner') lsSet('robotjagt_locker', '1'); if (player.skin === 'robot') player.disguise = true; // robot: forklædt, indtil man nedlægger en robot
   if (player.skin === 'banana') player.skinDmg = 0.5; // banan: halvt så stærk
   if (player.skin === 'rainbow') player.speedMul = 1.15; // regnbue: 15 % hurtigere
