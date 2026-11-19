@@ -110,6 +110,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.68', d: '19-11-2026', items: ['Fejl rettet: robotternes skud og missiler fløj lige igennem dig uden at gøre skade – nu rammer de igen', 'Ultra-bossens flammekastere kan ikke længere brænde igennem mure og bygninger – flammen stopper ved væggen'] },
   { v: '1.67', d: '18-11-2026', items: ['Test: ny arbejdsgang med forhåndsvisning på port 8000 før udgivelse'] },
   { v: '1.66', d: '18-11-2026', items: ['test af cline'] },
   { v: '1.65', d: '14-11-2026', items: ['Savrobotter er længere om at smadre bygninger: 10 sekunder om én væg i stedet for 2,5 sekunder', 'Fejl rettet: savrobotter kunne hugge vægge op til 15 gange for hurtigt, når de ikke stod ved dig', 'Musikken er skruet meget op, og en begrænser sørger for, at høj lyd ikke skratter'] },
@@ -691,7 +692,7 @@ function updateUltra(r, dt, d) {
     for (const side of [-1, 0, 1]) {
       const fa = r.angle + side * 0.38;
       const nx = r.x + Math.cos(fa) * (r.r + 6), ny = r.y + Math.sin(fa) * (r.r + 6);
-      robotFlame(r, nx, ny, fa, CFG.ultraFlameRange, CFG.bossFlameDps * 1.2, dt);
+      robotFlame(r, nx, ny, fa, CFG.ultraFlameRange, CFG.bossFlameDps * 1.2, dt, true);
     }
   } else r.flaming = false;
   // plasmakugler – store, langsomme og de brænder sig gennem dine vægge
@@ -1109,15 +1110,24 @@ function shootHoming(r, k) {
       life: 5, owner: 'r', dmg: 400, homing: true, angle: a });
   }
 }
-function robotFlame(r, nx, ny, fa, range, dps, dt) {
+// Første mur eller bygning på en linje – giver hvor langt (0–1) linjen når, før den bliver stoppet
+function segBlockedAt(x1, y1, x2, y2) {
+  let best = 1;
+  for (const w of walls) if (segHitsRect(x1, y1, x2, y2, w) && CT0 < best) best = CT0;
+  builtInBox(Math.min(x1, x2), Math.min(y1, y2), Math.max(x1, x2), Math.max(y1, y2), w => { if (segHitsRect(x1, y1, x2, y2, w) && CT0 < best) best = CT0; return false; });
+  return best;
+}
+// block = true: flammen stoppes af mure og bygninger (ultra-bossen)
+function robotFlame(r, nx, ny, fa, range, dps, dt, block) {
   sfx('eflame', r.x, r.y);
+  const reach = block ? range * segBlockedAt(nx, ny, nx + Math.cos(fa) * range, ny + Math.sin(fa) * range) : range;
   for (let k = 0; k < 4; k++) { // dobbelt så store flammer, der ender ved rækkevidden (rækkevidden er uændret)
-    const a = fa + rand(-0.25, 0.25), v = rand(600, 700) * range / 240, life = rand(0.45, 0.6);
+    const a = fa + rand(-0.25, 0.25), v = rand(600, 700) * reach / 240, life = rand(0.45, 0.6);
     particles.push({ x: nx, y: ny, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life, max: life,
       color: ['#ffdf6b', '#ff7a2a', '#ffb347', '#ff5a2a'][k], size: rand(10, 18), drag: 0.965, grow: true });
   }
   const pa = Math.atan2(player.y - ny, player.x - nx); let ad = pa - fa; ad = Math.atan2(Math.sin(ad), Math.cos(ad));
-  if (Math.abs(ad) < 0.42 && Math.hypot(player.x - nx, player.y - ny) < range) hitPlayer(dps * dt, true);
+  if (Math.abs(ad) < 0.42 && Math.hypot(player.x - nx, player.y - ny) < range && (!block || segBlockedAt(nx, ny, player.x, player.y) >= 1)) hitPlayer(dps * dt, true);
 }
 
 // ---------- Powerups ----------
@@ -1797,11 +1807,11 @@ function updateRobots(dt) {
     let tgt = null;
     if (r.hunter) { tgt = hunterTarget(r); if (!tgt) r.hunter = null; }
     else if (rogueProxies.length) { let bd = Infinity; for (const g of rogueProxies) { const d = Math.hypot(g.x - r.x, g.y - r.y); if (d < bd) { bd = d; tgt = g; } } }
-    if (!tgt && !MP && !player.disguise) { robotStep(r, dt); continue; }
     const me = player, nb = bullets.length;
+    if (!tgt && !MP && !player.disguise) robotStep(r, dt); else {
     player = tgt || (MP ? mpTarget(r) : player); if (!tgt && player.disguise) player = DISGUISE_DUMMY; // forklædt: robotterne ser dig slet ikke
     huntHit = !!r.hunter;
-    try { robotStep(r, dt); } finally { player = me; huntHit = false; }
+    try { robotStep(r, dt); } finally { player = me; huntHit = false; } }
     for (let i = nb; i < bullets.length; i++) if (bullets[i].owner === 'r') bullets[i].src = r; // så robotten ikke rammer sig selv
   }
   for (const g of rogueProxies) if (g.pend > 0) { // skaden fra de andre robotter rammer forræderen
@@ -1851,7 +1861,7 @@ function updateBullets(dt) {
         if (!dead && MP && MP.ff) for (const o of others) if (!o.dead && Math.hypot(o.x - b.x, o.y - b.y) < o.r + 4) { mpFF(o, b.dmg * CFG.ffMul); dead = true; break; } // friendly fire
       } else if (b.owner !== 'v') {
         const hunt = !!(b.src && b.src.hunter);
-        for (const t of mpAll().concat(rogueProxies)) if (!t.dead && (!t.disguise || hunt) && t.robotTarget !== b.src && Math.hypot(t.x - b.x, t.y - b.y) < t.r + (b.plasma ? 14 : b.big ? 8 : 4)) { huntHit = hunt; try { mpHit(t, b.dmg); } finally { huntHit = false; } dead = true; if (b.plasma) { burst(b.x, b.y, '#7dffcf', 18, 260); rings.push({ x: b.x, y: b.y, t: 0.25, tele: true }); } break; }
+        for (const t of mpAll().concat(rogueProxies)) if (!t.dead && (!t.disguise || hunt) && !(b.src && t.robotTarget === b.src) && Math.hypot(t.x - b.x, t.y - b.y) < t.r + (b.plasma ? 14 : b.big ? 8 : 4)) { huntHit = hunt; try { mpHit(t, b.dmg); } finally { huntHit = false; } dead = true; if (b.plasma) { burst(b.x, b.y, '#7dffcf', 18, 260); rings.push({ x: b.x, y: b.y, t: 0.25, tele: true }); } break; }
       }
     }
     if (dead) { if (aprilMode && b.owner === 'p') aprilBoom(b); bullets.splice(i, 1); }
