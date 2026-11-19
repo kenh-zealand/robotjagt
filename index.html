@@ -110,6 +110,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.69', d: '19-11-2026', items: ['🐻‍❄️ Nyt hemmeligt skin: Isbjørn – +25 % skade og +25 % fart, og den kaster med fisk', 'Isbjørnens super: 10 sekunders raseri, hvor alle dens værdier fordobles (skade, fart, angrebshastighed og liv), og den slås med kløerne i nærkamp i stedet for at kaste fisk', 'Isbjørnens super tager 3 gange så lang tid at lade op'] },
   { v: '1.68', d: '19-11-2026', items: ['Fejl rettet: robotternes skud og missiler fløj lige igennem dig uden at gøre skade – nu rammer de igen', 'Ultra-bossens flammekastere kan ikke længere brænde igennem mure og bygninger – flammen stopper ved væggen'] },
   { v: '1.67', d: '18-11-2026', items: ['Test: ny arbejdsgang med forhåndsvisning på port 8000 før udgivelse'] },
   { v: '1.66', d: '18-11-2026', items: ['test af cline'] },
@@ -225,7 +226,11 @@ const CFG = {
   bossWallSmash: 108,   // bosser smadrer dine vægge inden for 3 spillerbredder fra kanten af bossen
   flameDps: 400,        // skade pr. sekund i flammen (halveret i v1.23)
   closeSight: 75,       // så tæt på kan robotter se dig, selv i en busk
-  superHits: 10,        // træffere før super er klar
+  superHits: 10,        // træffere før super er klar (isbjørn: 3 gange så mange)
+  bearRageTime: 10,     // isbjørn: super varer 10 sek.
+  bearSwipeGap: 0.35,   // isbjørn: tid mellem kloslag (før raseriets dobbelte hastighed)
+  bearSwipeDmg: 3,      // isbjørn: kloslag = 3 pistolskud
+  bearSwipeRange: 80,   // isbjørn: kløernes rækkevidde
   missileSpeed: 720,
   missileTurn: 5.5,     // hvor skarpt missilet kan dreje (radianer/sek.)
   missileRadius: 220,   // ca. 5 robotter bred
@@ -943,9 +948,10 @@ function nearestVisibleRobot() {
 function tryShoot(angle) {
   const p = player;
   const W = WEAPONS[p.weapon];
+  if (p.skin === 'bear' && p.rageT > 0) { bearSwipe(angle); return; } // isbjørn i raseri: nærkamp
   if (p.ammo < W.cost - 1e-6 || p.fireCd > 0) return;
   sfx('w_' + p.weapon);
-  p.ammo = Math.max(0, p.ammo - W.cost); p.fireCd = W.gap / p.rateMul; p.reveal = 0.9; p.reloadPause = (CFG.reloadPause + W.gap) / p.rateMul; // pausen er længere end tiden til næste skud, så man ikke lader op midt i en skudserie
+  p.ammo = Math.max(0, p.ammo - W.cost); p.fireCd = W.gap / p.rateMul / rageMul(); p.reveal = 0.9; p.reloadPause = (CFG.reloadPause + W.gap) / p.rateMul; // pausen er længere end tiden til næste skud, så man ikke lader op midt i en skudserie
   const dmg = CFG.shotDamage * W.dmg * p.dmgMul * pDmg() * (buffs.damage > 0 ? 2 : 1);
   if (W.flame) { // flammekaster: skade på alle robotter i keglen foran dig
     const range = cheats.range ? 900 : CFG.bulletRange * W.range;
@@ -972,7 +978,7 @@ function tryShoot(angle) {
     const a = angle + (W.pellets > 1 ? (k / (W.pellets - 1) - 0.5) * 2 * W.spread + rand(-0.03, 0.03) : rand(-W.spread, W.spread));
     const c = Math.cos(a), s = Math.sin(a);
     bullets.push({ x: p.x + c * 28 - s * off, y: p.y + s * 28 + c * off, vx: c * W.speed, vy: s * W.speed, seek: cheats.aimbot, thru: cheats.wallhack,
-      life: (cheats.aimbot || cheats.range) ? 8 : CFG.bulletRange * W.range / W.speed, owner: 'p', dmg, strong: buffs.damage > 0, wtype: p.weapon, superGain: W.superGain });
+      life: (cheats.aimbot || cheats.range) ? 8 : CFG.bulletRange * W.range / W.speed, owner: 'p', dmg, strong: buffs.damage > 0, wtype: p.weapon, superGain: W.superGain, fish: p.skin === 'bear' });
   }
   const c = Math.cos(angle), s = Math.sin(angle);
   burst(p.x + c * 34, p.y + s * 34, p.weapon === 'sniper' ? '#bfefff' : '#ffd27a', p.weapon === 'shotgun' ? 12 : 6, 160, angle, 0.6);
@@ -1006,9 +1012,9 @@ function teleport(r) {
 function hitRobot(r, b) {
   betray(r);
   sfx('hit', r.x, r.y);
-  if (superCharge < CFG.superHits) {
-    superCharge = Math.min(CFG.superHits, superCharge + (b.superGain || 1));
-    if (superCharge >= CFG.superHits) { banner('SUPER KLAR!'); burst(player.x, player.y, '#ffd84a', 20, 200); }
+  if (superCharge < superNeed()) {
+    superCharge = Math.min(superNeed(), superCharge + (b.superGain || 1));
+    if (superCharge >= superNeed()) { banner('SUPER KLAR!'); burst(player.x, player.y, '#ffd84a', 20, 200); }
   }
   if (player.skin === 'ice') { // is-skin: robotten bliver 10 % langsommere i 10 sekunder
     r.slowT = CFG.iceSlowTime; if (MP && MP.role === 'client' && r.id) MP.slow.add(r.id);
@@ -1156,7 +1162,7 @@ function applyPowerup(t, admin) {
   const am = p.ammoMul || 1; // ejer-skin: grønne krystaller giver 3 gange så meget
   if (t === 'ammo' && !D.autoReload) { p.ammo += 3 * am; return; } // Svær: grøn krystal giver 3 skud
   if (t === 'ammo') { p.maxAmmo = admin ? p.maxAmmo + am : Math.min(CFG.ammoCap * am, p.maxAmmo + am); p.ammo = Math.min(p.maxAmmo, p.ammo + am); }
-  if (t === 'super') { if (superCharge < CFG.superHits) banner('SUPER KLAR!'); superCharge = CFG.superHits; }
+  if (t === 'super') { if (superCharge < superNeed()) banner('SUPER KLAR!'); superCharge = superNeed(); }
 }
 function updatePowerups(dt) {
   powerTimer -= dt;
@@ -1450,8 +1456,43 @@ function nearestRobot(x, y) {
   for (const r of robots) { const d = Math.hypot(r.x - x, r.y - y); if (d < bd) { bd = d; best = r; } }
   return best;
 }
+function superNeed() { return CFG.superHits * (player && player.skin === 'bear' ? 3 : 1); } // isbjørn: super tager 3 gange så lang tid at lade op
+// 🐻‍❄️ Isbjørn-super: 10 sekunders raseri – dobbelt skade, fart, angrebshastighed og liv, og den slås med kløerne i stedet for at kaste fisk
+function bearRage() {
+  const p = player;
+  p.rageT = CFG.bearRageTime; p.rageHp = p.maxHp; p.maxHp += p.rageHp; p.hp += p.rageHp;
+  shake = Math.max(shake, 12); rings.push({ x: p.x, y: p.y, t: 0, small: true });
+  burst(p.x, p.y, '#ffffff', 40, 380); burst(p.x, p.y, '#9fe8ff', 30, 300);
+  banner('🐻‍❄️ ISBJØRNE-RASERI!');
+  popups.push({ x: p.x, y: p.y - 50, text: 'Dobbelt skade, fart og liv i 10 sek.', color: '#e8f4ff', t: -0.3 });
+}
+function bearRageEnd() {
+  const p = player; p.rageT = 0;
+  p.maxHp = Math.max(1, p.maxHp - (p.rageHp || 0)); p.hp = Math.min(p.hp, p.maxHp); p.rageHp = 0;
+  burst(p.x, p.y, '#e8f4ff', 20, 220);
+  popups.push({ x: p.x, y: p.y - 50, text: '🐟 Tilbage til fisk', color: '#9fd8ff', t: 0 });
+}
+function rageMul() { return player.rageT > 0 ? 2 : 1; }
+function bearSwipe(angle) { // isbjørn i raseri: kløerne slår alle robotter i en bue foran den
+  const p = player;
+  if (p.fireCd > 0) return;
+  p.fireCd = CFG.bearSwipeGap / p.rateMul / rageMul(); p.reveal = 0.9; p.swipeT = 0.18; p.swipeA = angle; p.swipeSide = -(p.swipeSide || 1);
+  sfx('w_shotgun', p.x, p.y);
+  const dmg = CFG.shotDamage * CFG.bearSwipeDmg * p.dmgMul * pDmg() * (buffs.damage > 0 ? 2 : 1), range = CFG.bearSwipeRange;
+  for (const r of robots.slice()) {
+    const d = Math.hypot(r.x - p.x, r.y - p.y); if (d > range + r.r) continue;
+    let ad = Math.atan2(r.y - p.y, r.x - p.x) - angle; ad = Math.atan2(Math.sin(ad), Math.cos(ad));
+    if (Math.abs(ad) > 1.1 + r.r / Math.max(d, 1)) continue;
+    hitRobot(r, { dmg, x: r.x, y: r.y });
+    burst(r.x, r.y, '#ffffff', 10, 260); burst(r.x, r.y, '#ff5a5a', 6, 200);
+  }
+  for (let k = 0; k < 10; k++) { const a = angle + (k / 9 - 0.5) * 2.2;
+    particles.push({ x: p.x + Math.cos(a) * range * 0.8, y: p.y + Math.sin(a) * range * 0.8, vx: Math.cos(a) * 120, vy: Math.sin(a) * 120, life: 0.2, max: 0.2, color: '#e8f4ff', size: 4 }); }
+  shake = Math.max(shake, 3);
+}
 function fireSuper() {
-  if (state !== 'play' || superCharge < CFG.superHits) return;
+  if (state !== 'play' || superCharge < superNeed() || player.rageT > 0) return;
+  if (player.skin === 'bear') { superCharge = 0; sfx('super'); bearRage(); return; }
   superCharge = 0; sfx('super');
   const p = player, tgt = nearestVisibleRobot() || nearestRobot(p.x, p.y);
   const a = tgt ? Math.atan2(tgt.y - p.y, tgt.x - p.x) : p.angle;
@@ -1570,7 +1611,7 @@ function updatePlayer(dt) {
     particles.push({ x: p.x - mx * 12 + rand(-10, 10), y: p.y - my * 12 + rand(-10, 6), vx: rand(-25, 25), vy: rand(-110, -50), life, max: life,
       color: ['#ffd23a', '#ff8a1a', '#ff4a10'][Math.floor(Math.random() * 3)], size: rand(2, 4), drag: 0.95 });
   }
-  const spd = CFG.playerSpeed * (p.speedMul || 1) * (p.skin === 'builder' && p.inWallT > 0 ? 3 : 1); // bygmester: +200 % fart inde i vægge
+  const spd = CFG.playerSpeed * (p.speedMul || 1) * rageMul() * (p.skin === 'builder' && p.inWallT > 0 ? 3 : 1); // bygmester: +200 % fart inde i vægge
   p.x += mx * spd * dt; p.y += my * spd * dt;
   p.invuln = Math.max(0, (p.invuln || 0) - dt);
   // Egne vægge: man må stå i dem i 3 sek. – bliver man længere, skubbes man ud og kan ikke gå igennem dem i 20 sek.
@@ -1600,7 +1641,9 @@ function updatePlayer(dt) {
   }
 
   p.fireCd = Math.max(0, p.fireCd - dt);
-  const rt = (buffs.reload > 0 ? CFG.fastReload : CFG.reloadTime) / p.rateMul / (p.reloadMul || 1) * WEAPONS[p.weapon].reload / D.reload;
+  p.swipeT = Math.max(0, (p.swipeT || 0) - dt);
+  if (p.rageT > 0) { p.rageT -= dt; if (p.rageT <= 0) bearRageEnd(); else if (Math.random() < 0.5) particles.push({ x: p.x + rand(-p.r, p.r), y: p.y + rand(-p.r, p.r), vx: rand(-40, 40), vy: rand(-80, -30), life: 0.5, max: 0.5, color: Math.random() < 0.5 ? '#ffffff' : '#9fe8ff', size: rand(2, 4) }); }
+  const rt = (buffs.reload > 0 ? CFG.fastReload : CFG.reloadTime) / p.rateMul / rageMul() / (p.reloadMul || 1) * WEAPONS[p.weapon].reload / D.reload;
   p.reloadPause = Math.max(0, (p.reloadPause || 0) - dt);
   // Kun et rigtigt skud sætter genladningen på pause (se tryShoot) – så man kan lade op, selvom man spammer knappen
   if (cheats.ammo) p.ammo = p.maxAmmo;
@@ -1988,6 +2031,12 @@ function draw() {
       ctx.rotate(time * 14); ctx.scale(1.5, 1.5); ctx.fillStyle = '#4f7a3a'; circle(0, 0, 6); ctx.fill();
       ctx.fillStyle = '#2a2f38'; ctx.fillRect(-2, -9, 4, 4); ctx.strokeStyle = '#c9d3df'; ctx.lineWidth = 1.5; circle(3, -8, 2.5); ctx.stroke();
       ctx.fillStyle = 'rgba(255,255,255,.35)'; circle(-2, -2, 2); }
+    else if (b.fish) { // isbjørn: en fisk der vrikker med halen
+      ctx.rotate(Math.sin(time * 30 + b.x * 0.05) * 0.25); const big = b.strong ? 1.3 : 1; ctx.scale(big, big);
+      ctx.fillStyle = '#8fb3cc'; ctx.beginPath(); ctx.moveTo(-8, 0); ctx.lineTo(-15, -6); ctx.lineTo(-14, 6); ctx.closePath(); ctx.fill(); // hale
+      const g = ctx.createLinearGradient(0, -5, 0, 5); g.addColorStop(0, '#5f8fb3'); g.addColorStop(0.5, '#d8eaf5'); g.addColorStop(1, '#f2f7fa');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(0, 0, 10, 5, 0, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#3f6a8a'; ctx.lineWidth = 1; ctx.stroke();
+      ctx.fillStyle = '#10161c'; circle(6, -1.5, 1.4); }
     else if (b.plasma) { ctx.globalAlpha = 0.35; ctx.fillStyle = '#7dffcf'; circle(0, 0, 20); ctx.fill(); ctx.globalAlpha = 1; ctx.fillStyle = '#7dffcf'; circle(0, 0, 12); ctx.fill(); ctx.fillStyle = '#ffffff'; circle(0, 0, 5); }
     else if (b.homing) { ctx.fillStyle = '#e8eaee'; rr(-8, -4, 16, 8, 3); ctx.fill(); ctx.fillStyle = '#e8323a'; ctx.beginPath(); ctx.moveTo(8, -4); ctx.lineTo(13, 0); ctx.lineTo(8, 4); ctx.fill(); }
     else if (b.big) { ctx.fillStyle = '#d94dff'; circle(0, 0, 8); ctx.fill(); ctx.fillStyle = '#f5c9ff'; circle(0, 0, 3.5); }
@@ -2044,7 +2093,7 @@ function draw() {
   ctx.globalAlpha = 1;
 
   // Super klar: pulserende ring om spilleren
-  if (state === 'play' && superCharge >= CFG.superHits) {
+  if (state === 'play' && superCharge >= superNeed()) {
     ctx.lineWidth = 3; ctx.strokeStyle = `rgba(255,216,74,${0.55 + 0.35 * Math.sin(time * 8)})`;
     circle(player.x, player.y, player.r + 9 + 2 * Math.sin(time * 8)); ctx.stroke();
   }
@@ -2250,10 +2299,38 @@ function drawPlayer() {
     }
     ctx.restore();
   }
+  const bear = p.skin === 'bear', rage = bear && (p.rageT > 0 || p.rage);
+  if (rage) { // raseri: større, med kold glød
+    ctx.save(); ctx.shadowColor = '#9fe8ff'; ctx.shadowBlur = 20; ctx.strokeStyle = `rgba(160,232,255,${0.5 + 0.3 * Math.sin(time * 10)})`; ctx.lineWidth = 3; circle(0, 0, p.r * 1.3 + 6); ctx.stroke(); ctx.restore();
+    ctx.scale(1.3, 1.3);
+  }
   ctx.rotate(p.angle);
-  drawGun(p.weapon, 1, p.skin === 'rainbow' && p.flash <= 0 ? (time * 160) % 360 : null);
+  if (bear && p.swipeT > 0) { // kloslag: tre hvide ridser i en bue
+    ctx.save(); ctx.globalAlpha = p.swipeT / 0.18; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    const ra = Math.atan2(Math.sin(p.swipeA - p.angle), Math.cos(p.swipeA - p.angle)), R = CFG.bearSwipeRange / 1.3;
+    for (const k of [-8, 0, 8]) { ctx.beginPath(); ctx.arc(0, 0, R + k, ra - 1.0, ra + 1.0); ctx.stroke(); }
+    ctx.restore();
+  }
+  if (rage) { // poter med kløer i stedet for våben
+    for (const sd of [-1, 1]) {
+      const fwd = p.swipeT > 0 && sd === (p.swipeSide || 1) ? 8 : 0;
+      ctx.fillStyle = '#f4f8fb'; ctx.strokeStyle = '#9fb3c4'; ctx.lineWidth = 1.5; circle(p.r * 0.75 + fwd, sd * p.r * 0.7, 7); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = '#1a1f27'; ctx.lineWidth = 1.6; ctx.beginPath();
+      for (const c of [-3.5, 0, 3.5]) { ctx.moveTo(p.r * 0.75 + fwd + 6, sd * p.r * 0.7 + c); ctx.lineTo(p.r * 0.75 + fwd + 11, sd * p.r * 0.7 + c * 1.3); } ctx.stroke();
+    }
+  } else if (!bear) drawGun(p.weapon, 1, p.skin === 'rainbow' && p.flash <= 0 ? (time * 160) % 360 : null);
+  else drawFishInPaw();
   const gold = p.skin === 'gold', rainbow = p.skin === 'rainbow';
-  if (p.skin === 'diamond' && p.flash <= 0) { // diamant: lyseblå krystal med facetter og glimt
+  if (bear && p.flash <= 0) { // isbjørn: hvid pels, ører, snude med sort næse
+    for (const sd of [-1, 1]) { ctx.fillStyle = '#f4f8fb'; ctx.strokeStyle = '#a9bccb'; ctx.lineWidth = 2; circle(-p.r * 0.35, sd * p.r * 0.8, 6); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#c9d6e0'; circle(-p.r * 0.35, sd * p.r * 0.8, 3); ctx.fill(); }
+    const g = ctx.createRadialGradient(-5, -5, 1, 0, 0, p.r);
+    g.addColorStop(0, '#ffffff'); g.addColorStop(0.6, '#eef4f8'); g.addColorStop(1, '#c4d3de');
+    circle(0, 0, p.r); ctx.fillStyle = g; ctx.fill(); ctx.lineWidth = 2.5; ctx.strokeStyle = '#a9bccb'; ctx.stroke();
+    ctx.fillStyle = '#e6eef4'; ctx.beginPath(); ctx.ellipse(p.r * 0.62, 0, 8, 6.5, 0, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#b8c8d5'; ctx.lineWidth = 1.2; ctx.stroke(); // snude
+    ctx.fillStyle = '#10161c'; ctx.beginPath(); ctx.ellipse(p.r * 0.62 + 5, 0, 2.8, 3.6, 0, 0, Math.PI * 2); ctx.fill(); // næse
+    ctx.fillStyle = rage ? '#ff3b30' : '#10161c'; if (rage) { ctx.shadowColor = '#ff3b30'; ctx.shadowBlur = 8; }
+    circle(p.r * 0.2, -5.5, 2); ctx.fill(); circle(p.r * 0.2, 5.5, 2); ctx.fill(); ctx.shadowBlur = 0;
+  } else if (p.skin === 'diamond' && p.flash <= 0) { // diamant: lyseblå krystal med facetter og glimt
     const g = ctx.createLinearGradient(-p.r, -p.r, p.r, p.r);
     g.addColorStop(0, '#e8fdff'); g.addColorStop(0.45, '#7fe3ff'); g.addColorStop(1, '#2a9fd6');
     ctx.beginPath(); for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2 + Math.PI / 8; ctx.lineTo(Math.cos(a) * (p.r + 1), Math.sin(a) * (p.r + 1)); } ctx.closePath();
@@ -2386,6 +2463,14 @@ function drawPlayer() {
   ctx.restore();
 }
 
+function drawFishInPaw() { // isbjørn uden raseri: holder en fisk i stedet for et våben
+  ctx.save(); ctx.translate(26, 6); ctx.rotate(Math.sin(time * 6) * 0.15);
+  ctx.fillStyle = '#8fb3cc'; ctx.beginPath(); ctx.moveTo(-8, 0); ctx.lineTo(-15, -6); ctx.lineTo(-14, 6); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#c9dfee'; ctx.beginPath(); ctx.ellipse(0, 0, 10, 5, 0, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#3f6a8a'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = '#10161c'; circle(6, -1.5, 1.4); ctx.fill();
+  ctx.fillStyle = '#f4f8fb'; ctx.strokeStyle = '#a9bccb'; ctx.lineWidth = 1.5; circle(-4, 4, 5); ctx.fill(); ctx.stroke(); // pote
+  ctx.restore();
+}
 function drawHUD() {
   mpHud();
   // På små skærme skaleres hele HUD'en ned, så den ikke fylder hele telefonen
@@ -2432,13 +2517,13 @@ function drawHUDInner() {
   }
 
   // Super
-  const ready = superCharge >= CFG.superHits;
+  const ready = superCharge >= superNeed();
   ctx.textAlign = 'left'; ctx.font = '700 12.5px system-ui,sans-serif';
   ctx.fillStyle = ready ? '#ffd84a' : '#c9d3df'; ctx.fillText('SUPER', x, y + 98);
   const segW = (w - 52 - 9 * 3) / 10;
-  for (let i = 0; i < CFG.superHits; i++) {
+  for (let i = 0; i < 10; i++) {
     const fx = x + 52 + i * (segW + 3);
-    ctx.fillStyle = i < superCharge ? (ready ? `rgba(255,216,74,${0.75 + 0.25 * Math.sin(time * 8)})` : '#d9b33a') : '#2b333d';
+    ctx.fillStyle = i < superCharge / superNeed() * 10 - 1e-9 ? (ready ? `rgba(255,216,74,${0.75 + 0.25 * Math.sin(time * 8)})` : '#d9b33a') : '#2b333d';
     rr(fx, y + 91, segW, 14, 3); ctx.fill();
   }
   if (ready) {
@@ -2496,6 +2581,7 @@ function drawHUDInner() {
   if (p.revives > 0) { lines.push(`Genoplivning: ${p.revives}`); extraColors.push('#fff3b0'); }
   if (p.skin === 'builder' && !isTouch) { lines.push('🔨 Z: slet en væg'); extraColors.push('#ff9a3c'); }
   if (p.disguise) { lines.push('🤖 Forklædt – robotterne angriber dig ikke'); extraColors.push('#ff6b5b'); }
+  if (p.skin === 'bear') { lines.push(p.rageT > 0 ? `🐻‍❄️ RASERI: ${Math.ceil(p.rageT)} s – kløer` : '🐻‍❄️ Isbjørn: kaster fisk'); extraColors.push('#e8f4ff'); }
   if (p.skin === 'fish') { lines.push(p.hookCd > 0 ? `Harpun: ${Math.ceil(p.hookCd)} s` : `Harpun klar (${TOUCH ? 'HARPUN-knappen' : 'G'})`); extraColors.push('#f2c230'); }
   if (p.rateMul > 1) { lines.push(`Skudhast.: +${Math.round((p.rateMul - 1) * 100)} %`); extraColors.push('#6ff0e2'); }
   ctx.fillStyle = 'rgba(13,16,20,.75)'; rr(VW - 170, 8, 162, 82 + (lines.length - 3) * 23, 12); ctx.fill();
@@ -2547,11 +2633,11 @@ function drawJoysticks() {
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '900 12px system-ui,sans-serif';
   ctx.fillStyle = buildMode ? '#2a1a00' : '#e6c08a'; ctx.fillText(buildMode ? 'BYGGER' : 'BYG', bb.x, bb.y - 6);
   ctx.font = '800 12px system-ui,sans-serif'; ctx.fillText('× ' + materials, bb.x, bb.y + 9);
-  const sb = superBtn(), ready = superCharge >= CFG.superHits;
+  const sb = superBtn(), ready = superCharge >= superNeed();
   circle(sb.x, sb.y, sb.r);
   ctx.fillStyle = ready ? `rgba(255,216,74,${0.75 + 0.2 * Math.sin(time * 8)})` : 'rgba(40,46,56,.7)'; ctx.fill();
   ctx.lineWidth = 3; ctx.strokeStyle = ready ? '#fff3b0' : 'rgba(255,216,74,.5)'; ctx.stroke();
-  if (!ready) { ctx.beginPath(); ctx.moveTo(sb.x, sb.y); ctx.arc(sb.x, sb.y, sb.r - 4, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * superCharge / CFG.superHits); ctx.closePath(); ctx.fillStyle = 'rgba(255,216,74,.35)'; ctx.fill(); }
+  if (!ready) { ctx.beginPath(); ctx.moveTo(sb.x, sb.y); ctx.arc(sb.x, sb.y, sb.r - 4, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * superCharge / superNeed()); ctx.closePath(); ctx.fillStyle = 'rgba(255,216,74,.35)'; ctx.fill(); }
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '900 13px system-ui,sans-serif';
   ctx.fillStyle = ready ? '#2a1a00' : '#ffd84a'; ctx.fillText('SUPER', sb.x, sb.y);
   for (const [k, col] of [['move', '120,170,255'], ['aim', '255,190,90']]) {
@@ -2599,7 +2685,7 @@ function menu() {
   panel.innerHTML = `<h1>Robotjagt</h1><p>Overlev så mange bølger af robotter som muligt. <span style="color:#93a0b0">· v${VERSION}</span></p>
     <div class="diff">${Object.entries(DIFFS).map(([k, d]) => `<button data-d="${k}" class="${k === difficulty ? 'on' : ''}" style="${k === difficulty ? 'border-color:' + d.color : ''}">${d.name}</button>`).join('')}</div>
     <div class="diff-info">${{ easy: 'Dobbelt liv, dobbelt så hurtig genladning, robotterne er halvt så stærke. Miniboss hver 5. bølge, boss hver 20., ingen ultra-boss. Mellemrum sigter automatisk.', normal: 'Det almindelige spil.', hard: 'Du er halvt så stærk, robotterne dobbelt så stærke. Ingen genladning – find skud og træ på banen. Du kan ikke gå gennem dine egne vægge.' }[difficulty]}</div>
-    <div class="menu-btns"><button id="go">Start spil</button><button class="sec" id="mpnow">👥 Multiplayer</button><button class="sec" id="admstart">⚙ Admin-tilstand</button><button class="sec" id="aprilstart">🤡 Aprilsnar</button><button class="sec" id="hsnow">🏆 Highscore</button><button class="sec" id="lockernow">🎽 Locker</button><button class="sec" id="codesnow">🔑 Koder</button><button class="sec" id="lognow">Ændringslog</button></div>${pendingSkin ? (pendingSkin === 'diamond' ? '<p class="tip" style="color:#9fefff">💎 Diamant-skin er klar til næste runde</p>' : pendingSkin === 'rainbow' ? '<p class="tip" style="color:#8fd0ff">🌈 Regnbue-skin er klar til næste runde</p>' : pendingSkin === 'flame' ? '<p class="tip" style="color:#ff8a3a">🔥 Flamme-skin er klar til næste runde</p>' : pendingSkin === 'angel' ? '<p class="tip" style="color:#fff3b0">😇 Engle-skin er klar til næste runde</p>' : pendingSkin === 'owner' ? '<p class="tip" style="color:#ffd84a">👑 Ejer-skin er klar til næste runde</p>' : pendingSkin === 'ice' ? '<p class="tip" style="color:#9fe8ff">❄ Is-skin er klar til næste runde</p>' : pendingSkin === 'twin' ? '<p class="tip" style="color:#7af0ff">⚡ Tvilling-skin er klar til næste runde</p>' : pendingSkin === 'builder' ? '<p class="tip" style="color:#ff9a3c">🔨 Bygmester-skin er klar til næste runde</p>' : pendingSkin === 'robot' ? '<p class="tip" style="color:#ff6b5b">🤖 Robot-skin er klar til næste runde</p>' : pendingSkin === 'banana' ? '<p class="tip" style="color:#ffe14a">🍌 Banan-skin er klar til næste runde</p>' : pendingSkin === 'fish' ? '<p class="tip" style="color:#f2c230">🎣 Fiskemand-skin er klar til næste runde (harpun på G)</p>' : '<p class="tip" style="color:#ffd84a">✨ Guld-skin er klar til næste runde</p>') : ''}
+    <div class="menu-btns"><button id="go">Start spil</button><button class="sec" id="mpnow">👥 Multiplayer</button><button class="sec" id="admstart">⚙ Admin-tilstand</button><button class="sec" id="aprilstart">🤡 Aprilsnar</button><button class="sec" id="hsnow">🏆 Highscore</button><button class="sec" id="lockernow">🎽 Locker</button><button class="sec" id="codesnow">🔑 Koder</button><button class="sec" id="lognow">Ændringslog</button></div>${pendingSkin ? (pendingSkin === 'diamond' ? '<p class="tip" style="color:#9fefff">💎 Diamant-skin er klar til næste runde</p>' : pendingSkin === 'rainbow' ? '<p class="tip" style="color:#8fd0ff">🌈 Regnbue-skin er klar til næste runde</p>' : pendingSkin === 'flame' ? '<p class="tip" style="color:#ff8a3a">🔥 Flamme-skin er klar til næste runde</p>' : pendingSkin === 'angel' ? '<p class="tip" style="color:#fff3b0">😇 Engle-skin er klar til næste runde</p>' : pendingSkin === 'owner' ? '<p class="tip" style="color:#ffd84a">👑 Ejer-skin er klar til næste runde</p>' : pendingSkin === 'ice' ? '<p class="tip" style="color:#9fe8ff">❄ Is-skin er klar til næste runde</p>' : pendingSkin === 'twin' ? '<p class="tip" style="color:#7af0ff">⚡ Tvilling-skin er klar til næste runde</p>' : pendingSkin === 'builder' ? '<p class="tip" style="color:#ff9a3c">🔨 Bygmester-skin er klar til næste runde</p>' : pendingSkin === 'robot' ? '<p class="tip" style="color:#ff6b5b">🤖 Robot-skin er klar til næste runde</p>' : pendingSkin === 'banana' ? '<p class="tip" style="color:#ffe14a">🍌 Banan-skin er klar til næste runde</p>' : pendingSkin === 'fish' ? '<p class="tip" style="color:#f2c230">🎣 Fiskemand-skin er klar til næste runde (harpun på G)</p>' : pendingSkin === 'bear' ? '<p class="tip" style="color:#e8f4ff">🐻‍❄️ Isbjørn-skin er klar til næste runde</p>' : '<p class="tip" style="color:#ffd84a">✨ Guld-skin er klar til næste runde</p>') : ''}
     ${portrait ? '<p class="tip">📱 Spillet er bedst, når du vender telefonen på langs.</p>' : ''}
     ${TOUCH && !canFullscreen() ? '<p class="tip">Tip: Del → "Føj til hjemmeskærm" giver fuld skærm.</p>' : ''}
     <details ${TOUCH ? '' : 'open'}><summary>Sådan spiller du</summary>
@@ -2660,12 +2746,12 @@ function nextWaveIn() {
 }
 let aprilMode = false; // 🤡 aprilsnar: dine skud er granater – runden kommer på Aprilsnar-tavlen
 // Skade fra sværhedsgrad og skin – gælder alt: skud, flammer, super-missil og granater (og ganges med lilla sværd)
-function pDmg() { return D.playerDmg * (player.skinDmg || 1) * (player.skin === 'builder' && player.inWallT > 0 ? 2 : 1); } // bygmester: dobbelt skade inde i vægge
+function pDmg() { return D.playerDmg * (player.skinDmg || 1) * (player.rageT > 0 ? 2 : 1) * (player.skin === 'builder' && player.inWallT > 0 ? 2 : 1); } // bygmester: dobbelt skade inde i vægge
 function start(admin) { D = DIFFS[difficulty]; reset(); if (!D.autoReload) player.ammo = CFG.hardStartAmmo; if (!D.autoMats) materials = CFG.startMaterials; player.skin = pendingSkin || equippedSkin(); if (player.skin) markSkin(player.skin); if (player.skin === 'owner') lsSet('robotjagt_locker', '1'); if (player.skin === 'twin') { player.skinDmg = 1.1; player.speedMul = 1.1; player.rateMul = 1.1; } // tvilling: +10 % skade, fart og skudhastighed
   if (player.skin === 'robot') player.disguise = true; // robot: forklædt, indtil man nedlægger en robot
   if (player.skin === 'banana') player.skinDmg = 0.5; // banan: halvt så stærk
   if (player.skin === 'rainbow') player.speedMul = 1.15; // regnbue: 15 % hurtigere
-  if (player.skin === 'flame') player.skinDmg = 1.1; if (player.skin === 'fish') { player.skinDmg = 1.05; player.speedMul = 1.05; } if (player.skin === 'angel') { player.skinDmg = 2; player.speedMul = 2; player.reloadMul = 2; player.revives = 5; } if (player.skin === 'owner') { player.rateMul = 2; player.ammoMul = 3; player.skinDmg = 6; player.speedMul = 3; player.reloadMul = 3; player.revives = 5; player.maxHp *= 6; player.hp = player.maxHp; } pendingSkin = null; adminFree = false; secretBuf = ''; for (const k in cheats) cheats[k] = false; adminMode = !!admin; usedAdmin = adminMode; state = 'play'; overlay.classList.add('hidden'); last = performance.now(); if (aprilMode) popups.push({ x: player.x, y: player.y - 70, text: '🤡 APRILSNAR – du skyder granater!', color: '#ff9de2', t: -1 }); }
+  if (player.skin === 'flame') player.skinDmg = 1.1; if (player.skin === 'fish') { player.skinDmg = 1.05; player.speedMul = 1.05; } if (player.skin === 'bear') { player.skinDmg = 1.25; player.speedMul = 1.25; } if (player.skin === 'angel') { player.skinDmg = 2; player.speedMul = 2; player.reloadMul = 2; player.revives = 5; } if (player.skin === 'owner') { player.rateMul = 2; player.ammoMul = 3; player.skinDmg = 6; player.speedMul = 3; player.reloadMul = 3; player.revives = 5; player.maxHp *= 6; player.hp = player.maxHp; } pendingSkin = null; adminFree = false; secretBuf = ''; for (const k in cheats) cheats[k] = false; adminMode = !!admin; usedAdmin = adminMode; state = 'play'; overlay.classList.add('hidden'); last = performance.now(); if (aprilMode) popups.push({ x: player.x, y: player.y - 70, text: '🤡 APRILSNAR – du skyder granater!', color: '#ff9de2', t: -1 }); }
 function pause() {
   if (MP) { mpPause(); return; }
   state = 'pause'; mouse.down = false; keys.clear();
@@ -2843,7 +2929,7 @@ let pendingSkin = null; // gælder kun for næste runde
 const skinCodesUsed = new Set(); // ejer-skin: alle skin-koder skal tastes (i vilkårlig rækkefølge)
 // 🎽 Locker (åben for alle): viser alle skins, man har aktiveret,
 // og det skin, man tager på, bliver på i alle runder, indtil man tager et andet (gemmes på enheden).
-const SKINS = { gold: ['✨ Guld', '#ffd84a'], rainbow: ['🌈 Regnbue', '#8fd0ff'], diamond: ['💎 Diamant', '#9fefff'], flame: ['🔥 Flamme', '#ff8a3a'], angel: ['😇 Engel', '#fff3b0'], ice: ['❄ Is', '#9fe8ff'], fish: ['🎣 Fiskemand', '#f2c230'], banana: ['🍌 Banan', '#ffe14a'], robot: ['🤖 Robot', '#ff6b5b'], builder: ['🔨 Bygmester', '#ff9a3c'], twin: ['⚡ Tvilling', '#7af0ff'], owner: ['👑 Ejer', '#ffd84a'] };
+const SKINS = { gold: ['✨ Guld', '#ffd84a'], rainbow: ['🌈 Regnbue', '#8fd0ff'], diamond: ['💎 Diamant', '#9fefff'], flame: ['🔥 Flamme', '#ff8a3a'], angel: ['😇 Engel', '#fff3b0'], ice: ['❄ Is', '#9fe8ff'], fish: ['🎣 Fiskemand', '#f2c230'], banana: ['🍌 Banan', '#ffe14a'], robot: ['🤖 Robot', '#ff6b5b'], builder: ['🔨 Bygmester', '#ff9a3c'], twin: ['⚡ Tvilling', '#7af0ff'], bear: ['🐻‍❄️ Isbjørn', '#e8f4ff'], owner: ['👑 Ejer', '#ffd84a'] };
 function lsGet(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } }
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
 function usedSkins() { try { const a = JSON.parse(lsGet('robotjagt_skins', '[]')); return Array.isArray(a) ? a.filter(k => SKINS[k]) : []; } catch (e) { return []; } }
@@ -2860,7 +2946,7 @@ function openLocker() {
   panel.querySelectorAll('[data-skin]').forEach(b => b.onclick = () => { lsSet('robotjagt_equip', b.dataset.skin); pendingSkin = null; openLocker(); });
   document.getElementById('lockerback').onclick = menu;
 }
-const CODES = { 193423269: 'gold', 1715379802: 'rainbow', 916669625: 'diamond', 177609: 'flame', 1815438879: 'angel', 1721998069: 'ice', 1196447028: 'fish', 3934113543: 'banana', 2497725778: 'builder', 3858410113: 'twin', 1927517077: 'robot' }; // koderne gemmes kun som tal, så de ikke kan læses i koden
+const CODES = { 193423269: 'gold', 1715379802: 'rainbow', 916669625: 'diamond', 177609: 'flame', 1815438879: 'angel', 1721998069: 'ice', 1196447028: 'fish', 3934113543: 'banana', 2497725778: 'builder', 3858410113: 'twin', 1927517077: 'robot', 4207890020: 'bear' }; // koderne gemmes kun som tal, så de ikke kan læses i koden
 function codeHash(t) { let h = 5381; for (const c of t.trim().toLowerCase()) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0; return h; }
 // 🤖 "Er du en robot?" – minispil til robot-skinnet. Opgaven siger lyskryds,
 // men for at få skinnet skal man vælge alle billeder UDEN lyskryds (det ville en robot jo gøre).
@@ -2987,6 +3073,7 @@ function openCodes() {
     else if (what === 'robot') { openCaptcha(); return; } // minispillet afgør, om man får skinnet
     else if (what === 'banana') { pendingSkin = 'banana'; msg.style.color = '#ffe14a'; msg.textContent = '🍌 Banan-skin aktiveret til næste runde! (du er halvt så stærk)'; }
     else if (what === 'fish') { pendingSkin = 'fish'; msg.style.color = '#f2c230'; msg.textContent = '🎣 Fiskemand-skin aktiveret til næste runde! Harpun på G'; }
+    else if (what === 'bear') { pendingSkin = 'bear'; msg.style.color = '#e8f4ff'; msg.textContent = '🐻‍❄️ Isbjørn-skin aktiveret til næste runde! Kaster med fisk – super giver 10 sek. raseri'; }
     else if (what === 'ice') { pendingSkin = 'ice'; msg.style.color = '#9fe8ff'; msg.textContent = '❄ Is-skin aktiveret til næste runde!'; }
     else if (what === 'angel') { pendingSkin = 'angel'; msg.style.color = '#fff3b0'; msg.textContent = '😇 Engle-skin aktiveret til næste runde!'; }
     else if (what === 'flame') { pendingSkin = 'flame'; msg.style.color = '#ff8a3a'; msg.textContent = '🔥 Flamme-skin aktiveret til næste runde!'; }
@@ -3138,7 +3225,7 @@ function adminAction(a, opt) {
   if (a === 'setkills') { kills = clamp(parseInt(num('admkills', 'v'), 10) || 0, 0, 999999); adminToast('Nedlagt: ' + kills); }
   if (a === 'mats') { materials += 20; adminToast('Byggemateriale: ' + materials); }
   if (a === 'heal') { p.hp = p.maxHp; adminToast('Liv fyldt op'); }
-  if (a === 'super') { superCharge = CFG.superHits; adminToast('Super er klar'); }
+  if (a === 'super') { superCharge = superNeed(); adminToast('Super er klar'); }
   if (a === 'maxhp') { p.maxHp += CFG.maxHpBonus; p.hp += CFG.maxHpBonus; adminToast('Max liv: ' + p.maxHp); }
   if (a === 'permdmg') { p.dmgMul += CFG.permDmgBonus; adminToast('Skade: +' + Math.round((p.dmgMul - 1) * 100) + ' %'); }
   if (a === 'permrate') { p.rateMul += CFG.permRateBonus; adminToast('Skudhastighed: +' + Math.round((p.rateMul - 1) * 100) + ' %'); }
@@ -3217,7 +3304,7 @@ function mpMe() {
   const p = player;
   return { x: Math.round(p.x), y: Math.round(p.y), angle: Math.round(p.angle * 100) / 100, hp: Math.round(p.hp), maxHp: Math.round(p.maxHp), r: p.r,
     skin: p.skin || null, weapon: p.weapon, hidden: !!p.hidden, reveal: Math.round((p.reveal || 0) * 10) / 10, flash: Math.round((p.flash || 0) * 100) / 100,
-    dead: !!p.dead, invuln: Math.round((p.invuln || 0) * 10) / 10, inWallT: p.inWallT > 0 ? 1 : 0, name: mpMyName(), disguise: !!p.disguise, hook: p.hook ? [Math.round(p.hook.x), Math.round(p.hook.y)] : null };
+    dead: !!p.dead, invuln: Math.round((p.invuln || 0) * 10) / 10, inWallT: p.inWallT > 0 ? 1 : 0, name: mpMyName(), disguise: !!p.disguise, rage: p.rageT > 0 ? 1 : 0, hook: p.hook ? [Math.round(p.hook.x), Math.round(p.hook.y)] : null };
 }
 
 // ---------- Lobby ----------
@@ -3376,7 +3463,7 @@ function mpHostMsg(id, d) {
     for (const k in d.kn || {}) { const r = robots.find(o => o.id === +k); if (r) { r.x = d.kn[k][0]; r.y = d.kn[k][1]; pushOut(r); } }
     for (const rid of d.bt || []) { const r = robots.find(o => o.id === rid); if (r && !r.hunter) r.hunter = id; }
     for (const rid of d.sl || []) { const r = robots.find(o => o.id === rid); if (r) r.slowT = CFG.iceSlowTime; }
-    for (const s of d.sh || []) bullets.push({ x: s[0], y: s[1], vx: s[2], vy: s[3], life: s[4], owner: 'v', team: true, strong: !!s[5], april: !!s[6], from: id });
+    for (const s of d.sh || []) bullets.push({ x: s[0], y: s[1], vx: s[2], vy: s[3], life: s[4], owner: 'v', team: true, strong: !!s[5], april: !!s[6], fish: !!s[7], from: id });
     return;
   }
   if (d.t === 'pu') { const i = powerups.findIndex(o => o.id === d.id); if (i >= 0) mpGiveBuff(i, MP.names[id]); return; }
@@ -3451,13 +3538,13 @@ function mpSendSnaps() {
     mt: meteors.map(mpOut),
     gf: grenadesFlying.filter(g => !g.remote).map(g => [mpR(g.x0), mpR(g.y0), mpR(g.tx), mpR(g.ty), Math.round(g.t * 100) / 100, Math.round(g.dur * 100) / 100]),
     ms: missiles.map(m => [mpR(m.x), mpR(m.y), Math.round(m.angle * 100) / 100]),
-    pl: [{ ...mpMe(), id: 'host' }, ...others.map(o => ({ id: o.id, x: mpR(o.tx ?? o.x), y: mpR(o.ty ?? o.y), angle: o.angle, hp: o.hp, maxHp: o.maxHp, r: o.r, skin: o.skin, weapon: o.weapon, hidden: o.hidden, reveal: o.reveal, flash: o.flash, dead: o.dead, invuln: o.invuln, name: o.name, hook: o.hook, disguise: o.disguise }))]
+    pl: [{ ...mpMe(), id: 'host' }, ...others.map(o => ({ id: o.id, x: mpR(o.tx ?? o.x), y: mpR(o.ty ?? o.y), angle: o.angle, hp: o.hp, maxHp: o.maxHp, r: o.r, skin: o.skin, weapon: o.weapon, hidden: o.hidden, reveal: o.reveal, flash: o.flash, dead: o.dead, invuln: o.invuln, name: o.name, hook: o.hook, disguise: o.disguise, rage: o.rage }))]
   };
   for (const [id, c] of MP.conns) {
     const p = MP.players.get(id);
     const msg = { ...base,
       bl: bullets.filter(b => b.from !== id).map(b => [mpR(b.x), mpR(b.y), mpR(b.vx), mpR(b.vy),
-        (b.plasma ? 1 : 0) | (b.big ? 2 : 0) | (b.ghost ? 4 : 0) | (b.homing ? 8 : 0) | (b.owner === 'p' || b.team ? 16 : 0) | (b.strong ? 32 : 0) | ((b.owner === 'p' && aprilMode) || b.april ? 64 : 0)]),
+        (b.plasma ? 1 : 0) | (b.big ? 2 : 0) | (b.ghost ? 4 : 0) | (b.homing ? 8 : 0) | (b.owner === 'p' || b.team ? 16 : 0) | (b.strong ? 32 : 0) | ((b.owner === 'p' && aprilMode) || b.april ? 64 : 0) | (b.fish ? 128 : 0)]),
       rg: newRings.filter(g => g.from !== id).map(g => ({ ...g, sent: undefined, from: undefined })),
       fx: fx.filter(f => f[7] !== id).map(f => f.slice(0, 7)) };
     if (p && p.pend > 0) { msg.hit = [Math.round(p.pend * 10) / 10, p.hard ? 1 : 0]; p.pend = 0; p.hard = false; }
@@ -3485,7 +3572,7 @@ function mpApplySnap(s) {
     n.tx = n.x; n.ty = n.y; return n;
   });
   bullets = bullets.filter(b => b.owner === 'p').concat(s.bl.map(a => ({ x: a[0], y: a[1], vx: a[2], vy: a[3], life: 0.35, owner: 'v',
-    plasma: !!(a[4] & 1), big: !!(a[4] & 2), ghost: !!(a[4] & 4), homing: !!(a[4] & 8), team: !!(a[4] & 16), strong: !!(a[4] & 32), april: !!(a[4] & 64), hitWalls: {} })));
+    plasma: !!(a[4] & 1), big: !!(a[4] & 2), ghost: !!(a[4] & 4), homing: !!(a[4] & 8), team: !!(a[4] & 16), strong: !!(a[4] & 32), april: !!(a[4] & 64), fish: !!(a[4] & 128), hitWalls: {} })));
   const keepT = (list, id) => { const o = list.find(x => x.id === id); return o ? o.t : 0; };
   powerups = s.pw.filter(a => !MP.reqPU.has(a[0])).map(a => ({ id: a[0], type: a[1], x: a[2], y: a[3], t: keepT(powerups, a[0]) }));
   weaponDrops = s.wd.map(a => ({ id: a[0], type: a[1], x: a[2], y: a[3], takenBy: a[4], t: keepT(weaponDrops, a[0]) }));
@@ -3540,7 +3627,7 @@ function mpClientUpdate(dt) {
   updateBullets(dt); updateMissiles(dt);
   if (bannerT > 0) bannerT -= dt;
   mpReviveCheck(dt);
-  for (const b of bullets) if (b.owner === 'p' && !b.sent) { b.sent = true; MP.shots.push([mpR(b.x), mpR(b.y), mpR(b.vx), mpR(b.vy), Math.round(b.life * 100) / 100, b.strong ? 1 : 0, aprilMode ? 1 : 0]); }
+  for (const b of bullets) if (b.owner === 'p' && !b.sent) { b.sent = true; MP.shots.push([mpR(b.x), mpR(b.y), mpR(b.vx), mpR(b.vy), Math.round(b.life * 100) / 100, b.strong ? 1 : 0, aprilMode ? 1 : 0, b.fish ? 1 : 0]); }
   MP.stT -= dt;
   if (MP.stT <= 0) {
     MP.stT = 1 / 20;
