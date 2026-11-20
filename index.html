@@ -114,6 +114,7 @@
 
 // ---------- Version og ændringslog (nyeste øverst) ----------
 const CHANGELOG = [
+  { v: '1.71', d: '20-11-2026', items: ['🤖 Robot-skin: fejl rettet – robotterne kunne angribe dig, når du gik ud af en busk, selvom du ikke havde angrebet dem i det fri', 'Det er nu der, hvor du stod, da du skød, kastede eller satte ild til en robot, der tæller – skud, granater og ild fra en busk afslører dig ikke, heller ikke hvis de rammer, efter du er gået ud', 'Skyder du en robot fra en busk, går de andre robotter stadig efter den – og alle er forklædte igen ved næste bølge'] },
   { v: '1.70', d: '20-11-2026', items: ['🏆 Highscore-tavlerne nulstilles hver søndag kl. 23.59 – top 10 viser nu ugens bedste', 'Alle tiders rekord står altid øverst på hver tavle og bliver der, indtil nogen slår den'] },
   { v: '1.69', d: '19-11-2026', items: ['🐻‍❄️ Nyt hemmeligt skin: Isbjørn – +25 % skade og +25 % fart, og den kaster med fisk', 'Isbjørnens super: 10 sekunders raseri, hvor alle dens værdier fordobles (skade, fart, angrebshastighed og liv), og den slås med kløerne i nærkamp i stedet for at kaste fisk', 'Isbjørnens super tager 3 gange så lang tid at lade op'] },
   { v: '1.68', d: '19-11-2026', items: ['Fejl rettet: robotternes skud og missiler fløj lige igennem dig uden at gøre skade – nu rammer de igen', 'Ultra-bossens flammekastere kan ikke længere brænde igennem mure og bygninger – flammen stopper ved væggen'] },
@@ -956,7 +957,7 @@ function tryShoot(angle) {
   if (p.skin === 'bear' && p.rageT > 0) { bearSwipe(angle); return; } // isbjørn i raseri: nærkamp
   if (p.ammo < W.cost - 1e-6 || p.fireCd > 0) return;
   sfx('w_' + p.weapon);
-  p.ammo = Math.max(0, p.ammo - W.cost); p.fireCd = W.gap / p.rateMul / rageMul(); p.reveal = 0.9; p.reloadPause = (CFG.reloadPause + W.gap) / p.rateMul; // pausen er længere end tiden til næste skud, så man ikke lader op midt i en skudserie
+  p.ammo = Math.max(0, p.ammo - W.cost); p.fireCd = W.gap / p.rateMul / rageMul(); p.reveal = 0.9; p.atkBush = !!p.hidden; p.reloadPause = (CFG.reloadPause + W.gap) / p.rateMul; // pausen er længere end tiden til næste skud, så man ikke lader op midt i en skudserie
   const dmg = CFG.shotDamage * W.dmg * p.dmgMul * pDmg() * (buffs.damage > 0 ? 2 : 1);
   if (W.flame) { // flammekaster: skade på alle robotter i keglen foran dig
     const range = cheats.range ? 900 : CFG.bulletRange * W.range;
@@ -1028,7 +1029,7 @@ function hitRobot(r, b) {
 }
 function damageRobot(r, dmg, x, y, quiet) {
   if (!robots.includes(r)) return;
-  if (player.disguise && !player.hidden && !dmgByRobot && !mpDmgFrom) unmask(); // robot-skin: skyder du på en robot i det fri, er du afsløret
+  if (player.disguise && !player.atkBush && !dmgByRobot && !mpDmgFrom) unmask(); // robot-skin: angriber du en robot fra det fri, er du afsløret (det tæller, hvor du stod, da du angreb – ikke hvor du står, når skuddet/ilden rammer)
   if (MP && MP.role === 'client') { // multiplayer: værten bestemmer robotternes liv – vi viser bare træffet
     if (!r.id) return; const q = MP.dq.get(r.id); if (q) { q[0] += dmg; q[1] = q[1] && quiet ? 1 : 0; } else MP.dq.set(r.id, [dmg, quiet ? 1 : 0]);
     r.hp -= dmg; if (!quiet) { r.flash = 0.12; burst(x, y, '#ffe1a0', 8, 220); } return;
@@ -1345,7 +1346,7 @@ function fireHook() {
   if (d > CFG.hookRange) { tx = p.x + (tx - p.x) / d * CFG.hookRange; ty = p.y + (ty - p.y) / d * CFG.hookRange; }
   tx = clamp(tx, p.r, WORLD.w - p.r); ty = clamp(ty, p.r, WORLD.h - p.r);
   p.hook = { x: p.x, y: p.y, tx, ty, phase: 'fly', hit: new Set(), stuck: 0 };
-  p.hookCd = CFG.hookCd; p.reveal = 1; sfx('hook');
+  p.hookCd = CFG.hookCd; p.reveal = 1; p.atkBush = !!p.hidden; sfx('hook');
 }
 function updateHook(p, dt) { // true = man bliver trukket (almindelig styring er sat på pause)
   const h = p.hook; p.invuln = Math.max(p.invuln || 0, 0.15); // udødelig, mens man harpunerer
@@ -1390,7 +1391,7 @@ function throwGrenade() {
   const d = Math.hypot(tx - p.x, ty - p.y), maxD = 460;
   if (d > maxD) { tx = p.x + (tx - p.x) / d * maxD; ty = p.y + (ty - p.y) / d * maxD; }
   tx = clamp(tx, 20, WORLD.w - 20); ty = clamp(ty, 20, WORLD.h - 20);
-  p.grenades--; p.reveal = 1; sfx('throw');
+  p.grenades--; p.reveal = 1; p.atkBush = !!p.hidden; sfx('throw');
   grenadesFlying.push({ x0: p.x, y0: p.y, tx, ty, t: 0, dur: 0.45 + Math.min(d, maxD) / 900 });
 }
 function explodeGrenade(x, y) {
@@ -1481,7 +1482,7 @@ function rageMul() { return player.rageT > 0 ? 2 : 1; }
 function bearSwipe(angle) { // isbjørn i raseri: kløerne slår alle robotter i en bue foran den
   const p = player;
   if (p.fireCd > 0) return;
-  p.fireCd = CFG.bearSwipeGap / p.rateMul / rageMul(); p.reveal = 0.9; p.swipeT = 0.18; p.swipeA = angle; p.swipeSide = -(p.swipeSide || 1);
+  p.fireCd = CFG.bearSwipeGap / p.rateMul / rageMul(); p.reveal = 0.9; p.atkBush = !!p.hidden; p.swipeT = 0.18; p.swipeA = angle; p.swipeSide = -(p.swipeSide || 1);
   sfx('w_shotgun', p.x, p.y);
   const dmg = CFG.shotDamage * CFG.bearSwipeDmg * p.dmgMul * pDmg() * (buffs.damage > 0 ? 2 : 1), range = CFG.bearSwipeRange;
   for (const r of robots.slice()) {
@@ -1501,7 +1502,7 @@ function fireSuper() {
   superCharge = 0; sfx('super');
   const p = player, tgt = nearestVisibleRobot() || nearestRobot(p.x, p.y);
   const a = tgt ? Math.atan2(tgt.y - p.y, tgt.x - p.x) : p.angle;
-  p.angle = a; p.reveal = 1.2; shake = Math.max(shake, 5);
+  p.angle = a; p.reveal = 1.2; p.atkBush = !!p.hidden; shake = Math.max(shake, 5);
   missiles.push({ x: p.x + Math.cos(a) * 26, y: p.y + Math.sin(a) * 26, angle: a, speed: 300, target: tgt, life: 5 });
   burst(p.x + Math.cos(a) * 30, p.y + Math.sin(a) * 30, '#ffd84a', 14, 240, a, 0.8);
 }
@@ -3062,7 +3063,7 @@ function hunterTarget(r) { // forræderens mål: den, der skød den
   return MP && MP.players ? MP.players.get(r.hunter) || null : null;
 }
 function betray(r) { // du skød en robot, mens du var forklædt og gemt i en busk
-  if (!player.disguise || !player.hidden || r.hunter) return;
+  if (!player.disguise || !player.atkBush || r.hunter) return;
   if (MP && MP.role === 'client') { if (r.id) MP.betray.add(r.id); r.hunter = MP.id; }
   else r.hunter = MP ? 'host' : 'me';
   r.alertT = 1.5; sfx('spot', r.x, r.y);
@@ -3091,7 +3092,7 @@ function matEvery() { return CFG.materialEvery / (player.skin === 'builder' ? 2.
 function wallHpFor(strong) { return CFG.wallHp * (strong ? 3 : 1); }
 function unmask() {
   const p = player; if (!p.disguise) return;
-  if (p.hidden) { if (time - (p.bushNote || -9) > 3) { p.bushNote = time; popups.push({ x: p.x, y: p.y - 50, text: '🌿 Ingen så, hvem der skød', color: '#6fe39a', t: 0 }); } return; } // skudt fra en busk: stadig forklædt
+  if (p.atkBush) { if (time - (p.bushNote || -9) > 3) { p.bushNote = time; popups.push({ x: p.x, y: p.y - 50, text: '🌿 Ingen så, hvem der skød', color: '#6fe39a', t: 0 }); } return; } // skudt fra en busk: stadig forklædt
   p.disguise = false; sfx('alarm'); shake = Math.max(shake, 10); burst(p.x, p.y, '#ff4a4a', 30, 320); rings.push({ x: p.x, y: p.y, t: 0, small: true });
   popups.push({ x: p.x, y: p.y - 50, text: '🚨 Robotterne har opdaget dig!', color: '#ff6b5b', t: -0.4 });
 }
